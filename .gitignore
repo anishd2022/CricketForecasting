@@ -2,3 +2,4 @@ venv/
 UnsignedContract.pdf
 UnsignedContract_DZsigned.pdf
 .DS_Store
+__pycache__/
