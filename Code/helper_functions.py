@@ -48,6 +48,9 @@ def convert_game_json_to_ballbyball_df(filename, match_format="T20"):
         print(f"Match type is {match_type}, not {match_format}. Skipping processing.")
         return None
     
+    # Get player registry for IDs
+    player_registry = data["info"].get("registry", {}).get("people", {})
+    
     rows = []
 
     # Process innings
@@ -61,23 +64,48 @@ def convert_game_json_to_ballbyball_df(filename, match_format="T20"):
             for delivery in over["deliveries"]:
                 # Update team total runs and wickets
                 total_team_runs += delivery["runs"]["total"]
+                
+                # extract wickets information:
+                wicket = 0 # default to no wicket
+                wicket_type = None
                 if "wickets" in delivery:
-                    total_team_wickets += 1
+                    for w in delivery["wickets"]:
+                        wicket = 1  # A wicket was taken
+                        wicket_type = w.get("kind", "Unknown")
+                        total_team_wickets += 1 # increment total wicket count
+                
+                # extract player IDs:
+                striker = delivery["batter"]
+                bowler = delivery["bowler"]
+                nonstriker = delivery["non_striker"]
+                striker_ID = player_registry.get(striker, "Unknown")
+                bowler_ID = player_registry.get(bowler, "Unknown")
+                nonstriker_ID = player_registry.get(nonstriker, "Unknown")
+                
+                # Extract runs
+                batter_runs = delivery["runs"].get("batter", 0)
+                extras_runs = delivery["runs"].get("extras", 0)
+                total_delivery_runs = delivery["runs"].get("total", 0)
 
                 # Append row data
                 rows.append({
                     "batting_team": batting_team,
                     "ball_number": ball_number,
                     "total_team_runs": total_team_runs,  # Cumulative runs
-                    "total_team_wickets": total_team_wickets  # Cumulative wickets
+                    "total_team_wickets": total_team_wickets,  # Cumulative wickets
+                    "striker_ID": striker_ID,
+                    "bowler_ID": bowler_ID,
+                    "nonstriker_ID": nonstriker_ID,
+                    "batter_runs": batter_runs,
+                    "extras_runs": extras_runs,
+                    "total_delivery_runs": total_delivery_runs,
+                    "wicket": wicket,
+                    "wicket_type": wicket_type
                 })
 
                 ball_number += 1  # Increment ball number
 
     # Convert to Pandas DataFrame
     df = pd.DataFrame(rows)
-    
-    # Convert team names to unique integer IDs
-    df["batting_team"], unique_teams = pd.factorize(df["batting_team"])
 
     return df

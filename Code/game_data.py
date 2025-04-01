@@ -7,6 +7,7 @@ import os
 import pickle
 
 
+"""
 # path to JSON files:
 folder_path = "Data/all_json/"
 
@@ -36,3 +37,13 @@ with open(pickle_file_path, 'wb') as f:
     pickle.dump(df_list, f)
     
 print(f"df_list saved to {pickle_file_path}")
+"""
+
+
+# example usage:
+df = convert_game_json_to_ballbyball_df("Data/all_json/336023.json", match_format="T20")
+print(df)
+df.to_csv("sample_2.csv", index=False)
+
+
+
