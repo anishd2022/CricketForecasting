@@ -1,0 +1,52 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Royal Challengers Bangalore,1,6,0,ba607b88,0a3d54b9,c4487b84,6,0,6,0,
+Royal Challengers Bangalore,2,12,0,ba607b88,0a3d54b9,c4487b84,6,0,6,0,
+Royal Challengers Bangalore,3,13,0,ba607b88,0a3d54b9,c4487b84,1,0,1,0,
+Royal Challengers Bangalore,4,17,0,c4487b84,0a3d54b9,ba607b88,4,0,4,0,
+Royal Challengers Bangalore,5,19,0,c4487b84,0a3d54b9,ba607b88,2,0,2,0,
+Royal Challengers Bangalore,6,23,0,c4487b84,0a3d54b9,ba607b88,4,0,4,0,
+Royal Challengers Bangalore,7,29,0,ba607b88,7a8bd078,c4487b84,6,0,6,0,
+Royal Challengers Bangalore,8,33,0,ba607b88,7a8bd078,c4487b84,4,0,4,0,
+Royal Challengers Bangalore,9,35,0,ba607b88,7a8bd078,c4487b84,2,0,2,0,
+Royal Challengers Bangalore,10,35,1,ba607b88,7a8bd078,c4487b84,0,0,0,1,caught
+Royal Challengers Bangalore,11,35,2,c4487b84,7a8bd078,d9273ee7,0,0,0,1,caught
+Royal Challengers Bangalore,12,35,3,d9273ee7,7a8bd078,235c2bb6,0,0,0,1,caught
+Royal Challengers Bangalore,13,37,3,235c2bb6,04a418e8,6eb146d2,2,0,2,0,
+Royal Challengers Bangalore,14,38,3,235c2bb6,04a418e8,6eb146d2,1,0,1,0,
+Royal Challengers Bangalore,15,40,3,6eb146d2,04a418e8,235c2bb6,2,0,2,0,
+Royal Challengers Bangalore,16,44,3,6eb146d2,04a418e8,235c2bb6,4,0,4,0,
+Royal Challengers Bangalore,17,44,4,6eb146d2,04a418e8,235c2bb6,0,0,0,1,caught
+Royal Challengers Bangalore,18,45,4,235c2bb6,04a418e8,b5da6c24,1,0,1,0,
+Royal Challengers Bangalore,19,46,4,235c2bb6,1e66c162,b5da6c24,1,0,1,0,
+Royal Challengers Bangalore,20,50,4,b5da6c24,1e66c162,235c2bb6,4,0,4,0,
+Royal Challengers Bangalore,21,52,4,b5da6c24,1e66c162,235c2bb6,2,0,2,0,
+Royal Challengers Bangalore,22,54,4,b5da6c24,1e66c162,235c2bb6,2,0,2,0,
+Royal Challengers Bangalore,23,54,4,b5da6c24,1e66c162,235c2bb6,0,0,0,0,
+Royal Challengers Bangalore,24,54,5,b5da6c24,1e66c162,235c2bb6,0,0,0,1,caught
+Royal Challengers Bangalore,25,55,5,235c2bb6,c6097d68,f62772e5,0,1,1,0,
+Royal Challengers Bangalore,26,56,5,235c2bb6,c6097d68,f62772e5,1,0,1,0,
+Royal Challengers Bangalore,27,57,5,f62772e5,c6097d68,235c2bb6,0,1,1,0,
+Royal Challengers Bangalore,28,57,6,235c2bb6,c6097d68,f62772e5,0,0,0,1,caught
+Royal Challengers Bangalore,29,61,6,f62772e5,c6097d68,cc1e8c68,4,0,4,0,
+Royal Challengers Bangalore,30,61,7,f62772e5,c6097d68,cc1e8c68,0,0,0,1,caught
+Royal Challengers Bangalore,31,62,7,21d4e29b,c6097d68,cc1e8c68,0,1,1,0,
+Rajasthan Royals,1,0,0,a4cc73aa,cc1e8c68,50c6bc2b,0,0,0,0,
+Rajasthan Royals,2,6,0,a4cc73aa,cc1e8c68,50c6bc2b,6,0,6,0,
+Rajasthan Royals,3,10,0,a4cc73aa,cc1e8c68,50c6bc2b,4,0,4,0,
+Rajasthan Royals,4,10,0,a4cc73aa,cc1e8c68,50c6bc2b,0,0,0,0,
+Rajasthan Royals,5,10,0,a4cc73aa,cc1e8c68,50c6bc2b,0,0,0,0,
+Rajasthan Royals,6,10,0,a4cc73aa,cc1e8c68,50c6bc2b,0,0,0,0,
+Rajasthan Royals,7,14,0,50c6bc2b,21d4e29b,a4cc73aa,4,0,4,0,
+Rajasthan Royals,8,20,0,50c6bc2b,21d4e29b,a4cc73aa,6,0,6,0,
+Rajasthan Royals,9,21,0,50c6bc2b,21d4e29b,a4cc73aa,1,0,1,0,
+Rajasthan Royals,10,22,0,a4cc73aa,21d4e29b,50c6bc2b,1,0,1,0,
+Rajasthan Royals,11,22,0,50c6bc2b,21d4e29b,a4cc73aa,0,0,0,0,
+Rajasthan Royals,12,22,0,50c6bc2b,21d4e29b,a4cc73aa,0,0,0,0,
+Rajasthan Royals,13,28,0,a4cc73aa,fa2f1dde,50c6bc2b,6,0,6,0,
+Rajasthan Royals,14,29,0,a4cc73aa,fa2f1dde,50c6bc2b,1,0,1,0,
+Rajasthan Royals,15,30,0,50c6bc2b,fa2f1dde,a4cc73aa,0,1,1,0,
+Rajasthan Royals,16,30,0,a4cc73aa,fa2f1dde,50c6bc2b,0,0,0,0,
+Rajasthan Royals,17,36,0,a4cc73aa,fa2f1dde,50c6bc2b,6,0,6,0,
+Rajasthan Royals,18,40,0,a4cc73aa,fa2f1dde,50c6bc2b,4,0,4,0,
+Rajasthan Royals,19,41,0,50c6bc2b,57ee1fde,a4cc73aa,0,1,1,0,
+Rajasthan Royals,20,41,1,a4cc73aa,57ee1fde,50c6bc2b,0,0,0,1,caught

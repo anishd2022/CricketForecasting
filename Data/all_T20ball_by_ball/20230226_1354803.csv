@@ -1,0 +1,56 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Isle of Man,1,0,1,39e599c8,1a628a92,8bee668b,0,0,0,1,caught
+Isle of Man,2,0,1,98f33eed,1a628a92,8bee668b,0,0,0,0,
+Isle of Man,3,0,1,98f33eed,1a628a92,8bee668b,0,0,0,0,
+Isle of Man,4,0,1,98f33eed,1a628a92,8bee668b,0,0,0,0,
+Isle of Man,5,1,1,98f33eed,1a628a92,8bee668b,1,0,1,0,
+Isle of Man,6,2,1,8bee668b,1a628a92,98f33eed,1,0,1,0,
+Isle of Man,7,3,1,8bee668b,7fcc57bf,98f33eed,1,0,1,0,
+Isle of Man,8,3,1,98f33eed,7fcc57bf,8bee668b,0,0,0,0,
+Isle of Man,9,4,1,98f33eed,7fcc57bf,8bee668b,1,0,1,0,
+Isle of Man,10,4,2,8bee668b,7fcc57bf,98f33eed,0,0,0,1,lbw
+Isle of Man,11,4,2,467c28f9,7fcc57bf,98f33eed,0,0,0,0,
+Isle of Man,12,4,2,467c28f9,7fcc57bf,98f33eed,0,0,0,0,
+Isle of Man,13,4,3,98f33eed,1a628a92,467c28f9,0,0,0,1,bowled
+Isle of Man,14,4,4,68019a70,1a628a92,467c28f9,0,0,0,1,lbw
+Isle of Man,15,4,5,f7bf6004,1a628a92,467c28f9,0,0,0,1,bowled
+Isle of Man,16,4,5,dba54d8e,1a628a92,467c28f9,0,0,0,0,
+Isle of Man,17,4,5,dba54d8e,1a628a92,467c28f9,0,0,0,0,
+Isle of Man,18,5,5,dba54d8e,1a628a92,467c28f9,1,0,1,0,
+Isle of Man,19,5,5,dba54d8e,7fcc57bf,467c28f9,0,0,0,0,
+Isle of Man,20,6,5,dba54d8e,7fcc57bf,467c28f9,1,0,1,0,
+Isle of Man,21,6,6,467c28f9,7fcc57bf,dba54d8e,0,0,0,1,caught
+Isle of Man,22,7,6,efcb778e,7fcc57bf,dba54d8e,1,0,1,0,
+Isle of Man,23,9,6,dba54d8e,7fcc57bf,efcb778e,2,0,2,0,
+Isle of Man,24,9,7,dba54d8e,7fcc57bf,efcb778e,0,0,0,1,caught
+Isle of Man,25,10,7,efcb778e,1a628a92,0c95e20e,1,0,1,0,
+Isle of Man,26,10,7,0c95e20e,1a628a92,efcb778e,0,0,0,0,
+Isle of Man,27,10,7,0c95e20e,1a628a92,efcb778e,0,0,0,0,
+Isle of Man,28,10,7,0c95e20e,1a628a92,efcb778e,0,0,0,0,
+Isle of Man,29,10,7,0c95e20e,1a628a92,efcb778e,0,0,0,0,
+Isle of Man,30,10,7,0c95e20e,1a628a92,efcb778e,0,0,0,0,
+Isle of Man,31,10,7,efcb778e,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,32,10,7,efcb778e,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,33,10,8,efcb778e,7fcc57bf,0c95e20e,0,0,0,1,bowled
+Isle of Man,34,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,35,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,36,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,37,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,38,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,39,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,40,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,41,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,42,10,8,0c95e20e,1a628a92,b312a9c1,0,0,0,0,
+Isle of Man,43,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,44,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,45,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,46,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,47,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,48,10,8,b312a9c1,7fcc57bf,0c95e20e,0,0,0,0,
+Isle of Man,49,10,9,0c95e20e,5b616bf0,b312a9c1,0,0,0,1,caught
+Isle of Man,50,10,9,a2dd9236,5b616bf0,b312a9c1,0,0,0,0,
+Isle of Man,51,10,9,a2dd9236,5b616bf0,b312a9c1,0,0,0,0,
+Isle of Man,52,10,10,a2dd9236,5b616bf0,b312a9c1,0,0,0,1,stumped
+Spain,1,1,0,f9f857dc,dba54d8e,510e33d3,0,1,1,0,
+Spain,2,7,0,f9f857dc,dba54d8e,510e33d3,6,0,6,0,
+Spain,3,13,0,f9f857dc,dba54d8e,510e33d3,6,0,6,0,

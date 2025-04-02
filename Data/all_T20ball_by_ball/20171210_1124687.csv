@@ -1,0 +1,7 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Lions,1,0,0,9948e262,d4eef961,b8cc58c9,0,0,0,0,
+Lions,2,0,0,9948e262,d4eef961,b8cc58c9,0,0,0,0,
+Lions,3,1,0,9948e262,d4eef961,b8cc58c9,1,0,1,0,
+Lions,4,1,0,b8cc58c9,d4eef961,9948e262,0,0,0,0,
+Lions,5,2,0,b8cc58c9,d4eef961,9948e262,1,0,1,0,
+Lions,6,3,0,9948e262,d4eef961,b8cc58c9,1,0,1,0,

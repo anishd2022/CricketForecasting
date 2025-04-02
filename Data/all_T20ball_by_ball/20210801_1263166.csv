@@ -1,0 +1,9 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+West Indies,1,0,0,1bae756b,9ab63e7b,db584dad,0,0,0,0,
+West Indies,2,6,0,1bae756b,9ab63e7b,db584dad,6,0,6,0,
+West Indies,3,7,0,1bae756b,9ab63e7b,db584dad,1,0,1,0,
+West Indies,4,7,0,db584dad,9ab63e7b,1bae756b,0,0,0,0,
+West Indies,5,8,0,db584dad,9ab63e7b,1bae756b,1,0,1,0,
+West Indies,6,9,0,1bae756b,9ab63e7b,db584dad,1,0,1,0,
+West Indies,7,9,0,1bae756b,9e9af5f2,db584dad,0,0,0,0,
+West Indies,8,15,0,1bae756b,9e9af5f2,db584dad,6,0,6,0,

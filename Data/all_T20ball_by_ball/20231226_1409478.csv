@@ -1,0 +1,4 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Canterbury,1,0,0,45df0e72,90701232,03521fd3,0,0,0,0,
+Canterbury,2,1,0,45df0e72,90701232,03521fd3,1,0,1,0,
+Canterbury,3,2,0,03521fd3,90701232,45df0e72,1,0,1,0,

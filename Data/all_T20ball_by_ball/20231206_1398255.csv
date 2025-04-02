@@ -1,0 +1,11 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Bangladesh,1,2,0,724645f5,686362af,712bbd92,2,0,2,0,
+Bangladesh,2,2,0,724645f5,686362af,712bbd92,0,0,0,0,
+Bangladesh,3,3,0,724645f5,686362af,712bbd92,1,0,1,0,
+Bangladesh,4,4,0,712bbd92,686362af,724645f5,1,0,1,0,
+Bangladesh,5,4,0,724645f5,686362af,712bbd92,0,0,0,0,
+Bangladesh,6,5,0,724645f5,686362af,712bbd92,0,1,1,0,
+Bangladesh,7,5,1,724645f5,686362af,712bbd92,0,0,0,1,caught
+Bangladesh,8,6,1,712bbd92,ce85fcaf,94de63bf,1,0,1,0,
+Bangladesh,9,7,1,94de63bf,ce85fcaf,712bbd92,0,1,1,0,
+Bangladesh,10,7,1,94de63bf,ce85fcaf,712bbd92,0,0,0,0,

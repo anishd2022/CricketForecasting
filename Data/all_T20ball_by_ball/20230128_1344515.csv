@@ -1,0 +1,13 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+India,1,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,2,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,3,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,4,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,5,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,6,0,0,5d2eda89,108c4c09,cb08b611,0,0,0,0,
+India,7,0,0,cb08b611,686362af,5d2eda89,0,0,0,0,
+India,8,0,0,cb08b611,686362af,5d2eda89,0,0,0,0,
+India,9,4,0,cb08b611,686362af,5d2eda89,4,0,4,0,
+India,10,4,0,cb08b611,686362af,5d2eda89,0,0,0,0,
+India,11,4,0,cb08b611,686362af,5d2eda89,0,0,0,0,
+India,12,4,0,cb08b611,686362af,5d2eda89,0,0,0,0,

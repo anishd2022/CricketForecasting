@@ -1,0 +1,3 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+New Zealand,1,2,0,5d664346,45a7e761,4663bd23,0,2,2,0,
+New Zealand,2,2,1,5d664346,45a7e761,4663bd23,0,0,0,1,bowled

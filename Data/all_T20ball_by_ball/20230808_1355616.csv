@@ -1,0 +1,28 @@
+batting_team,ball_number,total_team_runs,total_team_wickets,striker_ID,bowler_ID,nonstriker_ID,batter_runs,extras_runs,total_delivery_runs,wicket,wicket_type
+Southern Brave,1,0,0,bf74b130,208f22ea,df5a6881,0,0,0,0,
+Southern Brave,2,6,0,bf74b130,208f22ea,df5a6881,6,0,6,0,
+Southern Brave,3,6,0,bf74b130,208f22ea,df5a6881,0,0,0,0,
+Southern Brave,4,7,0,bf74b130,208f22ea,df5a6881,1,0,1,0,
+Southern Brave,5,7,0,df5a6881,208f22ea,bf74b130,0,0,0,0,
+Southern Brave,6,7,0,df5a6881,208f22ea,bf74b130,0,0,0,0,
+Southern Brave,7,7,1,df5a6881,208f22ea,bf74b130,0,0,0,1,caught and bowled
+Southern Brave,8,8,1,a15618fe,208f22ea,bf74b130,1,0,1,0,
+Southern Brave,9,9,1,bf74b130,208f22ea,a15618fe,0,1,1,0,
+Southern Brave,10,9,1,bf74b130,208f22ea,a15618fe,0,0,0,0,
+Southern Brave,11,10,1,bf74b130,208f22ea,a15618fe,1,0,1,0,
+Southern Brave,12,11,1,bf74b130,1d2f290a,a15618fe,1,0,1,0,
+Southern Brave,13,15,1,a15618fe,1d2f290a,bf74b130,4,0,4,0,
+Southern Brave,14,19,1,a15618fe,1d2f290a,bf74b130,4,0,4,0,
+Southern Brave,15,20,1,a15618fe,1d2f290a,bf74b130,1,0,1,0,
+Southern Brave,16,21,1,bf74b130,1d2f290a,a15618fe,1,0,1,0,
+Southern Brave,17,22,1,a15618fe,c5cc48bc,bf74b130,1,0,1,0,
+Southern Brave,18,23,1,bf74b130,c5cc48bc,a15618fe,1,0,1,0,
+Southern Brave,19,29,1,a15618fe,c5cc48bc,bf74b130,6,0,6,0,
+Southern Brave,20,30,1,a15618fe,c5cc48bc,bf74b130,1,0,1,0,
+Southern Brave,21,31,1,bf74b130,c5cc48bc,a15618fe,1,0,1,0,
+Southern Brave,22,32,1,bf74b130,4a461c24,a15618fe,1,0,1,0,
+Southern Brave,23,33,1,a15618fe,4a461c24,bf74b130,1,0,1,0,
+Southern Brave,24,33,1,bf74b130,4a461c24,a15618fe,0,0,0,0,
+Southern Brave,25,33,2,bf74b130,4a461c24,a15618fe,0,0,0,1,caught
+Southern Brave,26,34,2,f1f99156,4a461c24,a15618fe,1,0,1,0,
+Southern Brave,27,34,3,a15618fe,eade4650,f1f99156,0,0,0,1,caught
