@@ -4,6 +4,7 @@
 from sqlalchemy import create_engine
 import json
 import pandas as pd
+import os
 
 # Helper function to move pandas dataframe from python to mysql database:
 # Parameters:
@@ -109,3 +110,50 @@ def convert_game_json_to_ballbyball_df(filename, match_format="T20"):
     df = pd.DataFrame(rows)
 
     return df
+
+
+
+# Function to convert a .json game file into a pandas dataframe of one observation which includes info about the game
+# Params:
+#   filename: the .json file to extract info from
+# Return:
+    # pandas df: containing game info like date, game_id, batting_1st_team, batting_2nd_team, venue, format, officials
+def convert_game_json_to_game_info_df(filename):
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    
+    # Extract the game ID from the filename (e.g., "3344.json" → "3344")
+    game_id = os.path.splitext(os.path.basename(filename))[0]
+    
+    # Extract game date and convert to YYYYMMDD format
+    game_date_raw = data["info"]["dates"][0]
+    game_date = game_date_raw.replace("-", "")
+    
+    # Extract teams
+    batting_first_team = data["innings"][0]["team"]
+    all_teams = data["info"]["teams"]
+    bowling_first_team = [team for team in all_teams if team != batting_first_team][0] 
+
+    # Venue and match type
+    venue = data["info"]["venue"]
+    match_type = data["info"]["match_type"]
+    
+    # Umpires (safe fallback in case keys are missing)
+    officials = data["info"].get("officials", {})
+    umpires = officials.get("umpires", ["Unknown", "Unknown"])
+    umpire_1 = umpires[0] if len(umpires) > 0 else "Unknown"
+    umpire_2 = umpires[1] if len(umpires) > 1 else "Unknown"
+    
+    # Construct the DataFrame
+    row = {
+        "game_id": game_id,
+        "game_date": game_date,
+        "batting_first_team": batting_first_team,
+        "bowling_first_team": bowling_first_team,
+        "venue": venue,
+        "match_type": match_type,
+        "umpire_1": umpire_1,
+        "umpire_2": umpire_2
+    }
+    
+    return pd.DataFrame([row])
