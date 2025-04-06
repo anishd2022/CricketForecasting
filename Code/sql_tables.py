@@ -63,19 +63,24 @@ class Venue(Base):
     
     ground_id = Column(Integer, primary_key=True, autoincrement=True)
     ground_name = Column(String(150), nullable=False, unique=True)
-    city = Column(String(100), nullable=False)
+    city = Column(String(100), nullable=True)
 
-# Create a teams master table: (still need to do this, do it later, leave blank for now)
-#   
-#
-#
-#
+# Create a teams master table:
+class Team(Base):
+    __tablename__ = 'teams'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    team_name = Column(String(150), nullable=False, unique=True)
+
+
+
 
 # creating the table if it doesn't exist
 create_table_if_not_exists(engine, Player)
 create_table_if_not_exists(engine, Official)
 create_table_if_not_exists(engine, MatchFormat)
 create_table_if_not_exists(engine, Venue)
+create_table_if_not_exists(engine, Team)
 
 
 
@@ -200,6 +205,31 @@ for filename in os.listdir(folder_path):
                 print(f"Added: ground_name='{venue}'")
             else:
                 print(f"Already exists: ground_name='{venue}'")
+
+# close session:
+session.close()
+
+
+# Create a session to input data into the teams table:            
+Session = sessionmaker(bind=engine)
+session = Session()
+
+for filename in os.listdir(folder_path):
+    if filename.endswith(".json"):  # Only process JSON files
+        # extract relative filepath
+        filepath = os.path.join(folder_path, filename)
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        
+        # extract teams:
+        teams = data.get("info", {}).get("teams", [])
+        for team_name in teams:
+            if not session.query(Team).filter_by(team_name=team_name).first():
+                session.add(Team(team_name=team_name))
+                session.commit()
+                print(f"Added team: {team_name}")
+            else:
+                print(f"Team already exists: {team_name}")
 
 # close session:
 session.close()
