@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 import os
 import json
 from datetime import datetime
+import time
 
 # specify folder path to all json files:
 folder_path = "Data/all_json/"
@@ -108,6 +109,29 @@ class PlayingEleven(Base):
     game_id = Column(Integer, ForeignKey('matches.game_id'), primary_key=True)
     player_id = Column(Integer, ForeignKey('players.id'), primary_key=True)
     team_id = Column(Integer, ForeignKey('teams.id'), primary_key=True)
+    
+# Create ball_by_ball table:
+class BallByBall(Base):
+    __tablename__ = 'ball_by_ball'
+
+    game_id = Column(Integer, ForeignKey('matches.game_id'), primary_key=True)
+    inning = Column(Integer, primary_key=True)
+    ball_number = Column(Integer, primary_key=True)
+
+    batting_team = Column(Integer, ForeignKey('teams.id'))
+    striker_id = Column(Integer, ForeignKey('players.id'))
+    nonstriker_id = Column(Integer, ForeignKey('players.id'))
+    bowler_id = Column(Integer, ForeignKey('players.id'))
+
+    batter_runs = Column(Integer, nullable=False)
+    extras_runs = Column(Integer, nullable=False)
+    extras_type = Column(String(20), nullable=True)
+
+    wicket = Column(Integer, nullable=False)  # 0 or 1
+    wicket_type = Column(String(50), nullable=True)
+
+    total_team_runs = Column(Integer, nullable=False)
+    total_team_wickets = Column(Integer, nullable=False)
 
 
 
@@ -119,6 +143,7 @@ create_table_if_not_exists(engine, Venue)
 create_table_if_not_exists(engine, Team)
 create_table_if_not_exists(engine, Match)
 create_table_if_not_exists(engine, PlayingEleven)
+create_table_if_not_exists(engine, BallByBall)
 
 
 
@@ -458,3 +483,96 @@ session.commit()
 session.close()
 
 
+# Create a session to input data into the ball by ball table:
+Session = sessionmaker(bind=engine)
+session = Session()
+total_files = 1
+# Loop through all JSON files
+for filename in os.listdir(folder_path):
+    if filename.endswith(".json"):
+        try:
+            game_id = int(filename.replace(".json", ""))
+            filepath = os.path.join(folder_path, filename)
+
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+
+            registry = data['info']['registry']['people']
+            innings_data = data['innings']
+
+            inning_num = 0
+
+            for inning in innings_data:
+                inning_num += 1
+                team_name = inning['team']
+                team = session.query(Team).filter_by(team_name=team_name).first()
+                if not team:
+                    print(f"⚠️ Team not found: {team_name}")
+                    continue
+                team_id = team.id
+
+                ball_number = 0
+                total_runs = 0
+                total_wickets = 0
+
+                for over in inning['overs']:
+                    for delivery in over['deliveries']:
+                        ball_number += 1
+
+                        batter = delivery.get("batter")
+                        bowler = delivery.get("bowler")
+                        non_striker = delivery.get("non_striker")
+
+                        batter_id = session.query(Player).filter_by(cricsheet_id=registry.get(batter)).first().id
+                        bowler_id = session.query(Player).filter_by(cricsheet_id=registry.get(bowler)).first().id
+                        nonstriker_id = session.query(Player).filter_by(cricsheet_id=registry.get(non_striker)).first().id
+
+                        runs = delivery["runs"]
+                        batter_runs = runs.get("batter", 0)
+                        extras_runs = runs.get("extras", 0)
+
+                        extras_type = None
+                        if "extras" in delivery:
+                            extras_type = list(delivery["extras"].keys())[0]
+
+                        wicket_info = delivery.get("wickets", [])
+                        wicket = 1 if wicket_info else 0
+                        wicket_type = wicket_info[0]["kind"] if wicket_info else None
+
+                        total_runs += batter_runs + extras_runs
+                        total_wickets += wicket
+
+                        # Insert row
+                        ball = BallByBall(
+                            game_id=game_id,
+                            inning=inning_num,
+                            ball_number=ball_number,
+                            batting_team=team_id,
+                            striker_id=batter_id,
+                            nonstriker_id=nonstriker_id,
+                            bowler_id=bowler_id,
+                            batter_runs=batter_runs,
+                            extras_runs=extras_runs,
+                            extras_type=extras_type,
+                            wicket=wicket,
+                            wicket_type=wicket_type,
+                            total_team_runs=total_runs,
+                            total_team_wickets=total_wickets
+                        )
+                        session.add(ball)
+
+            # ✅ Commit after processing one file
+            session.commit()
+            print(f"Committed: {filename}")
+            print(total_files)
+            total_files += 1
+            time.sleep(1)
+
+        except Exception as e:
+            session.rollback()  # Roll back any partial changes for this file
+            print(f"Error processing {filename}: {e}")
+
+# Close session after all files
+session.close()
+
+# committed the first 2149 files...
