@@ -25,12 +25,18 @@ def create_table_if_not_exists(engine, model_class):
         print(f"Table '{model_class.__tablename__}' already exists.")
 
 
+
+# For mySQL db hosted on AWS
+# user: admin
+# password: Papasdog123$
+# databse name: cricket-test-database
+
 # SQL connection details:
-username = 'root'
-password = 'root'
-host = 'localhost'
-port = '8889'
-database = 'CricketData'
+username = 'admin'
+password = 'Papasdog123$'
+host = 'cricket-test-database.c782sq2s63i5.us-west-1.rds.amazonaws.com'
+port = '3306'
+database = 'cricket-test-database'
 
 # create engine:
 engine = create_engine(f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}', echo=True)
@@ -146,7 +152,7 @@ create_table_if_not_exists(engine, PlayingEleven)
 create_table_if_not_exists(engine, BallByBall)
 
 
-
+'''
 # add data to players table:
 df = pd.read_csv('Data/people.csv')
 
@@ -293,7 +299,7 @@ for filename in os.listdir(folder_path):
 
 # close session:
 session.close()
-
+'''
 
 # Create a session to input data into the matches table:
 Session = sessionmaker(bind=engine)
