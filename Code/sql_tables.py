@@ -10,6 +10,7 @@ import os
 import json
 from datetime import datetime
 import time
+from dotenv import load_dotenv
 
 # specify folder path to all json files:
 folder_path = "Data/all_json/"
@@ -32,11 +33,11 @@ def create_table_if_not_exists(engine, model_class):
 # databse name: cricket-test-database
 
 # SQL connection details:
-username = 'admin'
-password = 'Papasdog123$'
-host = 'cricket-test-database.c782sq2s63i5.us-west-1.rds.amazonaws.com'
-port = '3306'
-database = 'cricket-test-database'
+username = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_USER")
+password = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PW")
+host = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_HOST")
+port = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PORT")
+database = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_DBNAME")
 
 # create engine:
 engine = create_engine(f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}', echo=True)
