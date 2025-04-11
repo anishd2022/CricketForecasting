@@ -27,10 +27,7 @@ def create_table_if_not_exists(engine, model_class):
 
 
 
-# For mySQL db hosted on AWS
-# user: admin
-# password: Papasdog123$
-# databse name: cricket-test-database
+
 
 # SQL connection details:
 username = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_USER")
