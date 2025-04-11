@@ -152,33 +152,6 @@ create_table_if_not_exists(engine, PlayingEleven)
 create_table_if_not_exists(engine, BallByBall)
 
 
-'''
-# add data to players table:
-df = pd.read_csv('Data/people.csv')
-
-
-
-# Create a session to input player information in the players master table:
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Loop through the dataframe and add players
-for index, row in df.iterrows():
-    player = Player(
-        name=row['name'],  
-        unique_name=row['unique_name'],
-        cricsheet_id=row['identifier']  
-    )
-    session.add(player)
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()  # clear the failed transaction if row is invalid
-        print(f"Row already exists: cricsheet_id='{row['identifier']}'")
-
-# close session
-session.close()
-
 
 # Create a session to input data into the match_format table:
 Session = sessionmaker(bind=engine)
@@ -299,11 +272,14 @@ for filename in os.listdir(folder_path):
 
 # close session:
 session.close()
-'''
 
-# Create a session to input data into the matches table:
+
+# Create a session to input data into players, matches, and playing_elevens tables:
 Session = sessionmaker(bind=engine)
 session = Session()
+
+commit_counter = 0
+BATCH_SIZE = 5000
 
 for filename in os.listdir(folder_path):
     if filename.endswith(".json"):
@@ -316,206 +292,182 @@ for filename in os.listdir(folder_path):
 
             info = data.get("info", {})
             registry = info.get("registry", {}).get("people", {})
+            players_by_team = info.get("players", {})
             innings = data.get("innings", [])
 
-            # Game date
-            date_str = info.get("dates", [])[0]
-            game_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-
-            # Player of match
-            pom_name = info.get("player_of_match", [None])[0]
-            pom_id = None
-            if pom_name:
-                cricsheet_id = registry.get(pom_name)
-                pom = session.query(Player).filter_by(cricsheet_id=cricsheet_id).first()
-                pom_id = pom.id if pom else None
-
-            # Teams
-            teams = info.get("teams", [])
-            team_name_1 = innings[0]['team']
-            team_name_2 = [t for t in teams if t != team_name_1][0]
-
-            team1 = session.query(Team).filter_by(team_name=team_name_1).first()
-            team2 = session.query(Team).filter_by(team_name=team_name_2).first()
-            batting_first_id = team1.id
-            bowling_first_id = team2.id
-
-            # Toss info
-            toss_info = info.get("toss", {})
-            toss_winner_name = toss_info.get("winner")
-            toss_decision = toss_info.get("decision")
-            toss_team = session.query(Team).filter_by(team_name=toss_winner_name).first()
-            toss_winner_id = toss_team.id
-
-            # Venue
-            venue_name = info.get("venue")
-            venue = session.query(Venue).filter_by(ground_name=venue_name).first()
-            venue_id = venue.ground_id if venue else None
-
-            # Match format
-            format_name = info.get("match_type")
-            match_format = session.query(MatchFormat).filter_by(match_format=format_name).first()
-            format_id = match_format.id if match_format else None
-
-            # Umpires
-            umpires = info.get("officials", {}).get("umpires", [])
-            umpire1_id, umpire2_id = None, None
-            if len(umpires) >= 1:
-                ump1 = session.query(Official).filter_by(umpire_name=umpires[0]).first()
-                umpire1_id = ump1.id if ump1 else None
-            if len(umpires) >= 2:
-                ump2 = session.query(Official).filter_by(umpire_name=umpires[1]).first()
-                umpire2_id = ump2.id if ump2 else None
-
-            # Outcome
-            outcome = info.get("outcome", {})
-            winner_name = outcome.get("winner")
-            winning_team_id = None
-            if winner_name:
-                winning_team = session.query(Team).filter_by(team_name=winner_name).first()
-                winning_team_id = winning_team.id if winning_team else None
-
-            # Innings defeat
-            by = outcome.get("by", {})
-            innings_defeat = "yes" if by.get("innings") == 1 else "no"
-
-            # Win by runs/wickets
-            win_by_runs = by.get("runs")
-            win_by_wickets = by.get("wickets")
-
-            # Check if match already exists
-            exists = session.query(Match).filter_by(game_id=game_id).first()
-            if not exists:
-                match = Match(
-                    game_id=game_id,
-                    game_date=game_date,
-                    player_of_the_match_id=pom_id,
-                    batting_first_team_id=batting_first_id,
-                    bowling_first_team_id=bowling_first_id,
-                    toss_winner=toss_winner_id,
-                    toss_decision=toss_decision,
-                    venue_id=venue_id,
-                    format=format_id,
-                    umpire_1=umpire1_id,
-                    umpire_2=umpire2_id,
-                    winning_team=winning_team_id,
-                    innings_defeat=innings_defeat,
-                    win_by_runs=win_by_runs,
-                    win_by_wickets=win_by_wickets
-                )
-                session.add(match)
-                print(f"Match added: game_id={game_id}")
-            else:
-                print(f"Match already exists: game_id={game_id}")
-
-        except Exception as e:
-            print(f"Error processing {filename}: {e}")
-
-# close session
-session.commit()
-session.close()
-
-
-# Create a session to input data into the playing elevens table:
-Session = sessionmaker(bind=engine)
-session = Session()
-
-for filename in os.listdir(folder_path):
-    if filename.endswith(".json"):
-        try:
-            # Extract game_id from filename (as an integer)
-            game_id = int(filename.replace(".json", ""))
-
-            # Load the JSON file
-            filepath = os.path.join(folder_path, filename)
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-            
-            # extract player names and ids from the json file:
-            info = data.get("info", {})
-            players_by_team = info.get("players", {})
-            registry = info.get("registry", {}).get("people", {})
-            
-            for team_name, player_names in players_by_team.items():
-                # Check if team exists, and add if missing
-                team = session.query(Team).filter_by(team_name=team_name).first()
-                if not team:
-                    team = Team(team_name=team_name)
-                    session.add(team)
-                    session.commit()
-                    print(f"Added new team: {team_name}")
-                team_id = team.id
-                
+            # Step 1: Insert players
+            cricsheet_ids_seen = set()
+            for player_names in players_by_team.values():
                 for player_name in player_names:
                     cricsheet_id = registry.get(player_name)
-                    
-                    # Check if player exists in the master table
+                    if not cricsheet_id or cricsheet_id in cricsheet_ids_seen:
+                        continue
+                    cricsheet_ids_seen.add(cricsheet_id)
+
                     player = session.query(Player).filter_by(cricsheet_id=cricsheet_id).first()
                     if not player:
-                        # Add new player to master table
                         player = Player(
                             name=player_name,
                             unique_name=player_name,
                             cricsheet_id=cricsheet_id
                         )
                         session.add(player)
-                        session.commit()
-                        print(f"Added new player: {player_name} (cricsheet_id={cricsheet_id})")
+                        session.flush()
+                        print(f"🟢 Added player: {player_name} ({cricsheet_id})")
 
-                    player_id = player.id
-                    
-                    # Check for duplicate entry
+            # Step 2: Insert match
+            if not session.query(Match).filter_by(game_id=game_id).first():
+                game_date = datetime.strptime(info["dates"][0], "%Y-%m-%d").date()
+
+                # Player of match
+                pom_name = info.get("player_of_match", [None])[0]
+                pom_id = None
+                if pom_name and pom_name in registry:
+                    pom = session.query(Player).filter_by(cricsheet_id=registry[pom_name]).first()
+                    pom_id = pom.id if pom else None
+
+                # Toss info
+                toss = info.get("toss", {})
+                toss_team = session.query(Team).filter_by(team_name=toss.get("winner")).first()
+                toss_id = toss_team.id if toss_team else None
+                toss_decision = toss.get("decision", "bat")
+
+                # Batting/bowling order
+                team1 = innings[0]['team']
+                team2 = [t for t in info.get("teams", []) if t != team1][0]
+                team1_id = session.query(Team).filter_by(team_name=team1).first().id
+                team2_id = session.query(Team).filter_by(team_name=team2).first().id
+
+                # Venue
+                venue_name = info.get("venue")
+                venue = session.query(Venue).filter_by(ground_name=venue_name).first()
+                venue_id = venue.ground_id if venue else None
+
+                # Format
+                match_format = info.get("match_type")
+                format_obj = session.query(MatchFormat).filter_by(match_format=match_format).first()
+                format_id = format_obj.id if format_obj else None
+
+                # Umpires
+                umpires = info.get("officials", {}).get("umpires", [])
+                ump1 = session.query(Official).filter_by(umpire_name=umpires[0]).first() if len(umpires) > 0 else None
+                ump2 = session.query(Official).filter_by(umpire_name=umpires[1]).first() if len(umpires) > 1 else None
+
+                # Outcome
+                outcome = info.get("outcome", {})
+                winner_team = session.query(Team).filter_by(team_name=outcome.get("winner")).first()
+                winner_id = winner_team.id if winner_team else None
+
+                innings_defeat = "yes" if outcome.get("by", {}).get("innings") == 1 else "no"
+                win_by_runs = outcome.get("by", {}).get("runs")
+                win_by_wickets = outcome.get("by", {}).get("wickets")
+
+                session.add(Match(
+                    game_id=game_id,
+                    game_date=game_date,
+                    player_of_the_match_id=pom_id,
+                    batting_first_team_id=team1_id,
+                    bowling_first_team_id=team2_id,
+                    toss_winner=toss_id,
+                    toss_decision=toss_decision,
+                    venue_id=venue_id,
+                    format=format_id,
+                    umpire_1=ump1.id if ump1 else None,
+                    umpire_2=ump2.id if ump2 else None,
+                    winning_team=winner_id,
+                    innings_defeat=innings_defeat,
+                    win_by_runs=win_by_runs,
+                    win_by_wickets=win_by_wickets
+                ))
+                print(f"🟣 Added match: {game_id}")
+                commit_counter += 1
+
+            # Step 3: Insert playing elevens
+            for team_name, player_names in players_by_team.items():
+                team = session.query(Team).filter_by(team_name=team_name).first()
+                if not team:
+                    team = Team(team_name=team_name)
+                    session.add(team)
+                    session.flush()
+                team_id = team.id
+
+                for player_name in player_names:
+                    cricsheet_id = registry.get(player_name)
+                    if not cricsheet_id:
+                        continue
+
+                    player = session.query(Player).filter_by(cricsheet_id=cricsheet_id).first()
+                    if not player:
+                        continue  # Should not happen if step 1 was successful
+
                     exists = session.query(PlayingEleven).filter_by(
                         game_id=game_id,
-                        player_id=player_id,
+                        player_id=player.id,
                         team_id=team_id
                     ).first()
-
                     if not exists:
-                        entry = PlayingEleven(
+                        session.add(PlayingEleven(
                             game_id=game_id,
-                            player_id=player_id,
+                            player_id=player.id,
                             team_id=team_id
-                        )
-                        session.add(entry)
-                        print(f"Added: Game {game_id}, Team {team_name}, Player {player_name}")
-                    else:
-                        print(f"Already exists: Game {game_id}, Team {team_name}, Player {player_name}")
-        except Exception as e:
-            print(f"Error processing {filename}: {e}")
+                        ))
+                        commit_counter += 1
 
-# Commit and close session
-session.commit()
+            # Commit in batches
+            if commit_counter >= BATCH_SIZE:
+                session.commit()
+                print(f"✅ Committed {commit_counter} rows.")
+                commit_counter = 0
+
+        except Exception as e:
+            print(f"❌ Error processing {filename}: {e}")
+            session.rollback()
+
+# Final commit
+if commit_counter > 0:
+    session.commit()
+    print(f"✅ Final commit of {commit_counter} remaining entries.")
+
 session.close()
 
 
-# Create a session to input data into the ball by ball table:
+
+# Create a session to input data into the ball_by_ball table:
 Session = sessionmaker(bind=engine)
 session = Session()
+
+# Cache player ID map
+player_id_map = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+team_id_map = {t.team_name: t.id for t in session.query(Team).all()}
+match_game_ids = set([m.game_id for m in session.query(Match.game_id).all()])
+
 total_files = 1
-# Loop through all JSON files
+
 for filename in os.listdir(folder_path):
     if filename.endswith(".json"):
         try:
             game_id = int(filename.replace(".json", ""))
-            filepath = os.path.join(folder_path, filename)
 
+            # Skip if match doesn't exist (foreign key constraint)
+            if game_id not in match_game_ids:
+                print(f"❌ Match not found for game_id={game_id}, skipping.")
+                continue
+
+            filepath = os.path.join(folder_path, filename)
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
             registry = data['info']['registry']['people']
             innings_data = data['innings']
 
-            inning_num = 0
+            balls_to_add = []
 
-            for inning in innings_data:
-                inning_num += 1
+            for inning_num, inning in enumerate(innings_data, start=1):
                 team_name = inning['team']
-                team = session.query(Team).filter_by(team_name=team_name).first()
-                if not team:
+                team_id = team_id_map.get(team_name)
+                if not team_id:
                     print(f"⚠️ Team not found: {team_name}")
                     continue
-                team_id = team.id
 
                 ball_number = 0
                 total_runs = 0
@@ -525,13 +477,17 @@ for filename in os.listdir(folder_path):
                     for delivery in over['deliveries']:
                         ball_number += 1
 
-                        batter = delivery.get("batter")
-                        bowler = delivery.get("bowler")
-                        non_striker = delivery.get("non_striker")
+                        batter = registry.get(delivery.get("batter"))
+                        bowler = registry.get(delivery.get("bowler"))
+                        non_striker = registry.get(delivery.get("non_striker"))
 
-                        batter_id = session.query(Player).filter_by(cricsheet_id=registry.get(batter)).first().id
-                        bowler_id = session.query(Player).filter_by(cricsheet_id=registry.get(bowler)).first().id
-                        nonstriker_id = session.query(Player).filter_by(cricsheet_id=registry.get(non_striker)).first().id
+                        batter_id = player_id_map.get(batter)
+                        bowler_id = player_id_map.get(bowler)
+                        nonstriker_id = player_id_map.get(non_striker)
+
+                        if not all([batter_id, bowler_id, nonstriker_id]):
+                            print(f"⚠️ Missing player ID for one or more participants, skipping delivery.")
+                            continue
 
                         runs = delivery["runs"]
                         batter_runs = runs.get("batter", 0)
@@ -548,8 +504,7 @@ for filename in os.listdir(folder_path):
                         total_runs += batter_runs + extras_runs
                         total_wickets += wicket
 
-                        # Insert row
-                        ball = BallByBall(
+                        balls_to_add.append(BallByBall(
                             game_id=game_id,
                             inning=inning_num,
                             ball_number=ball_number,
@@ -564,21 +519,17 @@ for filename in os.listdir(folder_path):
                             wicket_type=wicket_type,
                             total_team_runs=total_runs,
                             total_team_wickets=total_wickets
-                        )
-                        session.add(ball)
+                        ))
 
-            # ✅ Commit after processing one file
+            # Batch insert
+            session.bulk_save_objects(balls_to_add)
             session.commit()
-            print(f"Committed: {filename}")
-            print(total_files)
+            print(f"✅ Committed: {filename} ({total_files})")
             total_files += 1
-            time.sleep(1)
 
         except Exception as e:
-            session.rollback()  # Roll back any partial changes for this file
-            print(f"Error processing {filename}: {e}")
+            session.rollback()
+            print(f"❌ Error processing {filename}: {e}")
 
 # Close session after all files
 session.close()
-
-# committed the first 2149 files...
