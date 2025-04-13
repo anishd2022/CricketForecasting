@@ -1,48 +1,18 @@
-# create SQL tables
+# Create SQL database table structures and populate tables with data
 
-# import necessary libraries
-from sqlalchemy import create_engine, Column, Integer, String, inspect, ForeignKey, Date
+from sqlalchemy import create_engine, Column, Integer, String, inspect, ForeignKey, Date, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-import pandas as pd
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
 import os
 import json
 from datetime import datetime
-import time
 from dotenv import load_dotenv
-
-# specify folder path to all json files:
-folder_path = "Data/all_json/"
+import re
 
 
-# define create_table_if_not_exists function:
-def create_table_if_not_exists(engine, model_class):
-    inspector = inspect(engine)
-    if not inspector.has_table(model_class.__tablename__):
-        print(f"Creating table: {model_class.__tablename__}")
-        model_class.__table__.create(engine)
-    else:
-        print(f"Table '{model_class.__tablename__}' already exists.")
-
-
-
-
-
-# SQL connection details:
-username = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_USER")
-password = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PW")
-host = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_HOST")
-port = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PORT")
-database = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_DBNAME")
-
-# create engine:
-engine = create_engine(f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}', echo=True)
-
-# Base class
 Base = declarative_base()
-
-
+# Define all models (Player, Official, MatchFormat, Venue, Team, Match, PlayingEleven, BallByBall)
 # Create a players master table:
 class Player(Base):
     __tablename__ = 'players'
@@ -85,7 +55,7 @@ class Team(Base):
 class Match(Base):
     __tablename__ = 'matches'
 
-    game_id = Column(Integer, primary_key=True)
+    game_id = Column(String(25), primary_key=True)
     game_date = Column(Date, nullable=False)
 
     player_of_the_match_id = Column(Integer, ForeignKey('players.id'))
@@ -110,7 +80,7 @@ class Match(Base):
 class PlayingEleven(Base):
     __tablename__ = 'playing_elevens'
     
-    game_id = Column(Integer, ForeignKey('matches.game_id'), primary_key=True)
+    game_id = Column(String(25), ForeignKey('matches.game_id'), primary_key=True)
     player_id = Column(Integer, ForeignKey('players.id'), primary_key=True)
     team_id = Column(Integer, ForeignKey('teams.id'), primary_key=True)
     
@@ -118,7 +88,7 @@ class PlayingEleven(Base):
 class BallByBall(Base):
     __tablename__ = 'ball_by_ball'
 
-    game_id = Column(Integer, ForeignKey('matches.game_id'), primary_key=True)
+    game_id = Column(String(25), ForeignKey('matches.game_id'), primary_key=True)
     inning = Column(Integer, primary_key=True)
     ball_number = Column(Integer, primary_key=True)
 
@@ -137,141 +107,447 @@ class BallByBall(Base):
     total_team_runs = Column(Integer, nullable=False)
     total_team_wickets = Column(Integer, nullable=False)
 
+engine = 0
+Session = 0
+# define folder path to all .json data files
+folder_path = "Data/all_json/"
 
 
-# creating the table if it doesn't exist
-create_table_if_not_exists(engine, Player)
-create_table_if_not_exists(engine, Official)
-create_table_if_not_exists(engine, MatchFormat)
-create_table_if_not_exists(engine, Venue)
-create_table_if_not_exists(engine, Team)
-create_table_if_not_exists(engine, Match)
-create_table_if_not_exists(engine, PlayingEleven)
-create_table_if_not_exists(engine, BallByBall)
+# Load environment variables
+def initialize_db_params():
+    print("Initialize params")
+    global engine
+    global Session
+    load_dotenv()
+    username = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_USER")
+    password = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PW")
+    host = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_HOST")
+    port = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_PORT")
+    database = os.getenv("UCMAS_AWS_CRIC01_DB_ADMIN_DBNAME")
+    
+    engine = create_engine(f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}', echo=False)
+    Session = sessionmaker(bind=engine)
 
 
 
-# Create a session to input data into the match_format table:
-Session = sessionmaker(bind=engine)
-session = Session()
+# Create tables if they do not exist, else continue:
+# return True if function works, else return False
+def create_table_if_not_exists(engine, model_class):
+    print("Create table if it doesnt exist")
+    try:
+        inspector = inspect(engine)
+        # Try a method that connects to the DB
+        tables = inspector.get_table_names()
+        print("✅ Tables in DB:", tables)
+        
+        if not inspector.has_table(model_class.__tablename__):
+            print(f"Creating table: {model_class.__tablename__}")
+            model_class.__table__.create(engine)
+        else:
+            print(f"Table '{model_class.__tablename__}' already exists. Skipping creation.")
+        return True   # success
+    except OperationalError as e:
+        print("❌ OperationalError: Could not connect to the database.")
+        print(e)
+    except SQLAlchemyError as e:
+        print("❌ SQLAlchemyError: Error inspecting the database.")
+        print(e)
+    except Exception as e:
+        print("❌ Unexpected error: perhaps database credentials are invalid...")
+        print(e)
+    return False  # failure
+    
 
-for filename in os.listdir(folder_path):
-    if filename.endswith(".json"):  # Only process JSON files
-        # extract relative filepath
+
+def create_all_tables():
+    print("Create all the tables")
+    for model in [Player, Official, MatchFormat, Venue, Team, Match, PlayingEleven, BallByBall]:
+        create_table_if_not_exists(engine, model)
+
+
+# returns a list of all game_ids based on the .json files in the folder path:
+def load_all_game_ids():
+    print("Loading all files...")
+    global folder_path
+    list_of_all_ids = set()    # use set to avoid duplicates
+    for filename in os.listdir(folder_path):
+        if not filename.endswith(".json"):
+            continue
+        
+        # Use full name before `.json` as the game ID
+        game_id = os.path.splitext(filename)[0]
+        
+        if game_id in list_of_all_ids:
+            raise ValueError(f"❌ Duplicate game ID found: {game_id} from file {filename}")
+        else:
+            list_of_all_ids.add(game_id)
+            
+    print(f"✅ Loaded {len(list_of_all_ids)} unique game IDs.")
+    return list_of_all_ids
+    
+# add data to master tables (match formats, venues, teams, and officials):
+def add_matchformats_venues_teams_officials(session, game_ids):
+    # Preload existing DB entries
+    # creates a set, avoiding duplicates
+    #   Ex: if the row is <MatchFormat(match_format='T20')>, then f.match_format is 'T20'
+    existing_formats = {f.match_format for f in session.query(MatchFormat).all()}
+    existing_officials = {o.umpire_name for o in session.query(Official).all()}
+    existing_venues = {v.ground_name for v in session.query(Venue).all()}
+    existing_teams = {t.team_name for t in session.query(Team).all()}
+    
+    # Batch insert containers (lists that will store new objects to be inserted into the database)
+    # This is quicker than inserting one row at a time
+    formats_to_add, officials_to_add, venues_to_add, teams_to_add = [], [], [], []
+    
+    # loop thru list of all game_ids:
+    for game_id in game_ids:
+        # get filename and relative filepath:
+        filename = f"{game_id}.json"
         filepath = os.path.join(folder_path, filename)
+        
+        # raise error if file is not found:
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"❌ File not found for game_id '{game_id}': {filename}")
+        
+        # open the file and load the data
         with open(filepath, 'r') as f:
             data = json.load(f)
-        # extract match format
-        match_type = data["info"]["match_type"]
         
-        # Check if match_format already exists
-        exists = session.query(MatchFormat).filter_by(match_format=match_type).first()
-        if not exists:
-            game_format = MatchFormat(match_format=match_type)
-            session.add(game_format)
-            session.commit()
-            print(f"Added: match_format='{match_type}'")
-        else:
-            print(f"Already exists: match_format='{match_type}'")
+        # extract appropriate data   
+        info = data.get("info", {})
+        match_type = info.get("match_type")
+        venue = info.get("venue")
+        city = info.get("city", "")
+        teams = info.get("teams", [])
+        officials = info.get("officials", {})
+        
+        # Match Format:
+        # .append prepares the match type for database insertion
+        # .add adds it to the set of already seen match formats to ensure no duplicates
+        if match_type and match_type not in existing_formats:
+            print(f"🆕 Adding match format: {match_type}")
+            formats_to_add.append(MatchFormat(match_format=match_type))
+            existing_formats.add(match_type)
+        
+        # Venue:
+        if venue and venue not in existing_venues:
+            print(f"🆕 Adding venue: {venue} (City: {city})")
+            venues_to_add.append(Venue(ground_name=venue, city=city))
+            existing_venues.add(venue)
+        
+        # Teams:
+        # this one has a for loop because there are multiple teams for a game
+        for team in teams:
+            if team not in existing_teams:
+                print(f"🆕 Adding team: {team}")
+                teams_to_add.append(Team(team_name=team))
+                existing_teams.add(team)
+        
+        # Officials:
+        # officials include umpires, tv_umpires, and match_referees:
+        # for each category, there can be multiple names (especially the umpires category, there are always 2 umpires)
+        for category in ["umpires", "tv_umpires", "match_referees"]:
+            for name in officials.get(category, []):
+                if name and name not in existing_officials:
+                    print(f"🆕 Adding official: {name} ({category})")
+                    officials_to_add.append(Official(umpire_name=name))
+                    existing_officials.add(name)
+        
+        # bulk_save objects performs a bulk insert of all the objects into the database in one efficient query
+        # the statements only get executed if there is something that needs to be added
+        # FORMATS:
+        if formats_to_add:
+            session.bulk_save_objects(formats_to_add)
+            print(f"Inserted {len(formats_to_add)} match formats")
+        # VENUES:
+        if venues_to_add:
+            session.bulk_save_objects(venues_to_add)
+            print(f"Inserted {len(venues_to_add)} venues")     
+        # TEAMS:
+        if teams_to_add:
+            session.bulk_save_objects(teams_to_add)
+            print(f"Inserted {len(teams_to_add)} teams")
+        # OFFICIALS:   
+        if officials_to_add:
+            session.bulk_save_objects(officials_to_add)
+            print(f"Inserted {len(officials_to_add)} officials")
+        
+    # commit data additions:
+    session.commit()
+    # print done statement:        
+    print("✅ Done adding data to match_formats, venues, officials, and teams tables!!!")
 
-# close session:
-session.close()
 
+# add data to more tables (players, matches, playing_elevens):
+def add_players_matches_playingelevens(session, game_ids):
+    # Preload existing DB entries
+    # creates a set, avoiding duplicates
+    #   Ex: if the row is <MatchFormat(match_format='T20')>, then f.match_format is 'T20'
+    existing_players = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+    existing_matches = {m.game_id for m in session.query(Match).with_entities(Match.game_id)}
+    existing_playing_elevens = {
+        (pe.game_id, pe.player_id, pe.team_id)
+        for pe in session.query(PlayingEleven).all()
+    }
+    
+    # Create maps:
+    # Ex: teams map queries all teams from the teams table:
+    #   then for each team object, extracts the team name as well as the ID associated with it
+    #   helps translate names into IDs on the fly 
+    teams_map = {t.team_name: t.id for t in session.query(Team).all()}
+    formats_map = {f.match_format: f.id for f in session.query(MatchFormat).all()}
+    officials_map = {o.umpire_name: o.id for o in session.query(Official).all()}
+    venues_map = {v.ground_name: v.ground_id for v in session.query(Venue).all()}
 
-# Create a session to input data into the officials table:
-Session = sessionmaker(bind=engine)
-session = Session()
-
-for filename in os.listdir(folder_path):
-    if filename.endswith(".json"):  # Only process JSON files
-        # extract relative filepath
+    # Batch insert containers (lists that will store new objects to be inserted into the database)
+    # This is quicker than inserting one row at a time
+    matches_to_add = []
+    players_to_add = []
+    playing_elevens_to_add = []
+    
+    # loop thru list of all game ids:
+    for game_id in game_ids:
+        # get the filename and the relative filepath
+        filename = f"{game_id}.json"
         filepath = os.path.join(folder_path, filename)
+        
+        # Raise error if file is not found and exit:
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"❌ File not found: {filename}")
+    
+        # Load the json file's data:
         with open(filepath, 'r') as f:
             data = json.load(f)
             
-        # Extract all types of officials
-        officials = data.get("info", {}).get("officials", {})
-        all_officials = []
-
-        # Get all names from each official category
-        all_officials.extend(officials.get("umpires", []))
-        all_officials.extend(officials.get("tv_umpires", []))
-        all_officials.extend(officials.get("match_referees", []))
-        
-        # Insert each official if not already in table
-        for name in all_officials:
-            if name:  # Skip empty strings
-                exists = session.query(Official).filter_by(umpire_name=name).first()
-                if not exists:
-                    session.add(Official(umpire_name=name))
-                    session.commit()
-                    print(f"Added official: {name}")
-                else:
-                    print(f"Official already exists: {name}")
-
-# close session:
-session.close()
-
-
-# Create a session to input data into the venues table:            
-Session = sessionmaker(bind=engine)
-session = Session()
-
-for filename in os.listdir(folder_path):
-    if filename.endswith(".json"):  # Only process JSON files
-        # extract relative filepath
-        filepath = os.path.join(folder_path, filename)
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        
-        # extract venue and city data:
+        # extract appropriate data:
         info = data.get("info", {})
-        city_name = info.get("city", "")
-        venue = info.get("venue")
+        registry = info.get("registry", {}).get("people", {})
+        players_section = info.get("players", {})
         
-        # check if venue already exists:
-        if venue:
-            exists = session.query(Venue).filter_by(ground_name=venue).first()
-            if not exists:
-                ground = Venue(
-                    ground_name = venue,
-                    city = city_name
-                )
-                session.add(ground)
-                session.commit()
-                print(f"Added: ground_name='{venue}'")
-            else:
-                print(f"Already exists: ground_name='{venue}'")
+        # PLAYERS:
+        # add any missing players based on cricsheet id as seen in the registry:
+        # loop through every entry in the registry['people'] dictionary:
+        for name, cricsheet_id in registry.items():
+            # id the cricsheet id does not exist in the database:
+            if cricsheet_id not in existing_players:
+                # create a new player object
+                player = Player(name=name, unique_name=name, cricsheet_id=cricsheet_id)
+                # adds player object to list for bulk insertion later:
+                players_to_add.append(player)
+                # add temporary placeholder ID, to say that we have handled this cricsheet_id during this run, 
+                #   though the actual ID hasn't been auto-generated yet since it hasn't been committed
+                existing_players[cricsheet_id] = None
+                print(f"🆕 Added player: {name} with ID: {cricsheet_id}")
+        
+        # MATCH:
+        # if the game id is not already in the matches table...
+        if game_id not in existing_matches:
+            # extract the necessary fields:
+            venue_id = venues_map.get(info.get("venue"))
+            format_id = formats_map.get(info.get("match_type"))
+            toss_winner = teams_map.get(info.get("toss", {}).get("winner"))
+            toss_decision = info.get("toss", {}).get("decision")
+    
+    # print completion statement
+    print("Function yet to be completed...")
 
-# close session:
-session.close()
 
 
-# Create a session to input data into the teams table:            
-Session = sessionmaker(bind=engine)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# MAIN:
+def main():
+    print("Code execution starting...")
+    try:
+        initialize_db_params()
+        create_all_tables()
+        load_all_game_ids()
+
+        # Try to create a session and connect to the DB
+        session = Session()
+        session.execute(text('SELECT 1'))  # optional: quick sanity check
+
+        print("✅ Database session started successfully.")
+
+        # get list of all game_ids:
+        list_of_game_ids = load_all_game_ids()
+        # add data to master tables (teams, venues, officials, match_formats):
+        # add_matchformats_venues_teams_officials(session, list_of_game_ids)
+        # add data to more tables (players, matches, playing_elevens):
+        add_players_matches_playingelevens(session, list_of_game_ids)
+        # ...
+        # ...
+        # ... continue with data population logic ...
+        # ...
+        session.commit()
+
+    except OperationalError as e:
+        print("❌ OperationalError: Could not connect to the database.")
+        print(e)
+
+    except SQLAlchemyError as e:
+        print("❌ SQLAlchemyError: Issue with the database session or query.")
+        print(e)
+
+    except Exception as e:
+        print("❌ Unexpected error during main execution.")
+        print(e)
+
+    finally:
+        try:
+            session.close()
+            print("🔒 Session closed.")
+        except NameError:
+            print("No session was created, so nothing to close.")
+        except Exception as e:
+            print("⚠️ Error while closing the session:", e)
+            
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
+# begin session for filling data for Officials, Venues, Teams, and Match Formats:
 session = Session()
 
+# Preload existing DB entries
+existing_formats = {f.match_format for f in session.query(MatchFormat).all()}
+existing_officials = {o.umpire_name for o in session.query(Official).all()}
+existing_venues = {v.ground_name for v in session.query(Venue).all()}
+existing_teams = {t.team_name for t in session.query(Team).all()}
+existing_players = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+existing_game_ids = {m.game_id for m in session.query(Match).with_entities(Match.game_id)}
+
+# Batch insert containers
+formats_to_add, officials_to_add, venues_to_add, teams_to_add = [], [], [], []
+
+# Scan all JSON files
 for filename in os.listdir(folder_path):
-    if filename.endswith(".json"):  # Only process JSON files
-        # extract relative filepath
-        filepath = os.path.join(folder_path, filename)
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        
-        # extract teams:
-        teams = data.get("info", {}).get("teams", [])
-        for team_name in teams:
-            if not session.query(Team).filter_by(team_name=team_name).first():
-                session.add(Team(team_name=team_name))
-                session.commit()
-                print(f"Added team: {team_name}")
-            else:
-                print(f"Team already exists: {team_name}")
+    if not filename.endswith(".json"):
+        continue
 
-# close session:
+    filepath = os.path.join(folder_path, filename)
+    with open(filepath, 'r') as f:
+        data = json.load(f)
+
+    info = data.get("info", {})
+    match_type = info.get("match_type")
+    venue = info.get("venue")
+    city = info.get("city", "")
+    teams = info.get("teams", [])
+    officials = info.get("officials", {})
+
+    # Match Format
+    if match_type and match_type not in existing_formats:
+        formats_to_add.append(MatchFormat(match_format=match_type))
+        existing_formats.add(match_type)
+
+    # Venue
+    if venue and venue not in existing_venues:
+        venues_to_add.append(Venue(ground_name=venue, city=city))
+        existing_venues.add(venue)
+
+    # Teams
+    for team in teams:
+        if team not in existing_teams:
+            teams_to_add.append(Team(team_name=team))
+            existing_teams.add(team)
+
+    # Officials
+    for category in ["umpires", "tv_umpires", "match_referees"]:
+        for name in officials.get(category, []):
+            if name and name not in existing_officials:
+                officials_to_add.append(Official(umpire_name=name))
+                existing_officials.add(name)
+
+# Commit batched inserts
+if formats_to_add:
+    session.bulk_save_objects(formats_to_add)
+    print(f"Inserted {len(formats_to_add)} match formats")
+
+if venues_to_add:
+    session.bulk_save_objects(venues_to_add)
+    print(f"Inserted {len(venues_to_add)} venues")
+
+if teams_to_add:
+    session.bulk_save_objects(teams_to_add)
+    print(f"Inserted {len(teams_to_add)} teams")
+
+if officials_to_add:
+    session.bulk_save_objects(officials_to_add)
+    print(f"Inserted {len(officials_to_add)} officials")
+
+session.commit()
 session.close()
+'''
+
+'''
+existing_players = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+existing_game_ids = {m.game_id for m in session.query(Match).with_entities(Match.game_id)}
+'''
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
 # Create a session to input data into players, matches, and playing_elevens tables:
 Session = sessionmaker(bind=engine)
 session = Session()
@@ -427,9 +703,10 @@ if commit_counter > 0:
     print(f"✅ Final commit of {commit_counter} remaining entries.")
 
 session.close()
+'''
 
 
-
+'''
 # Create a session to input data into the ball_by_ball table:
 Session = sessionmaker(bind=engine)
 session = Session()
@@ -531,3 +808,5 @@ for filename in os.listdir(folder_path):
 
 # Close session after all files
 session.close()
+'''
+
