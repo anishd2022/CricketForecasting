@@ -492,7 +492,131 @@ def add_players_matches_playingelevens(session, game_ids):
 
 
 def add_ballbyball(session, game_ids):
-    print("This function is yet to be completed...")
+    # pre load player and team maps:
+    players_map = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+    teams_map = {t.team_name: t.id for t in session.query(Team).all()}
+
+    # pre load existing game_ids within the ball_by_ball table:
+    existing_ballbyball_games = {
+        g[0] for g in session.query(BallByBall.game_id).distinct().all()
+    }
+    
+    # keep count of total inserted, and total games
+    total_inserted = 0
+    total_games = 0
+    
+    # loop thru each game_id:
+    for game_id in game_ids:
+        # skip game if already processed:
+        if game_id in existing_ballbyball_games:
+            print(f"⏭️ Game {game_id} already has ball-by-ball data, skipping...")
+            continue
+        
+        # get the filename and the relative filepath
+        filename = f"{game_id}.json"
+        filepath = os.path.join(folder_path, filename)
+        
+        # Raise error if file is not found and exit:
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"❌ File not found: {filename}")
+    
+        # Load the json file's data:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+            
+        # extract appropriate data:
+        innings = data.get("innings", [])
+        registry = data.get("info", {}).get("registry", {}).get("people", {})
+        ball_by_ball_rows = []
+        inning_number = 1
+        
+        # for each inning in the game...
+        for inning in innings:
+            batting_team_name = inning.get("team")
+            batting_team_id = teams_map.get(batting_team_name)
+            ball_number = 1
+            total_runs = 0
+            total_wickets = 0
+            
+            # for each over in a given innings:
+            for over in inning.get("overs", []):
+                # for each delivery in that over:
+                for delivery in over.get("deliveries", []):
+                    striker_name = delivery.get("batter")
+                    non_striker_name = delivery.get("non_striker")
+                    bowler_name = delivery.get("bowler")
+
+                    striker_cricsheet_id = registry.get(striker_name)
+                    non_striker_cricsheet_id = registry.get(non_striker_name)
+                    bowler_cricsheet_id = registry.get(bowler_name)
+                    
+                    striker_id = players_map.get(striker_cricsheet_id)
+                    non_striker_id = players_map.get(non_striker_cricsheet_id)
+                    bowler_id = players_map.get(bowler_cricsheet_id)
+                    
+                    runs = delivery.get("runs", {})
+                    batter_runs = runs.get("batter", 0)
+                    extras_runs = runs.get("extras", 0)
+                    runs_this_ball = batter_runs + extras_runs
+                    total_runs += runs_this_ball
+                    
+                    # check for wicket:
+                    wicket_info = delivery.get("wickets", [])
+                    if wicket_info:
+                        wicket = 1
+                        wicket_type = wicket_info[0].get("kind")
+                        total_wickets += 1
+                    else:
+                        wicket = 0
+                        wicket_type = None
+                    
+                    # check for extras type:
+                    extras_dict = delivery.get("extras", {})
+                    if extras_dict:
+                        extras_type = list(extras_dict.keys())[0]
+                    else:
+                        extras_type = None
+                    
+                    # create ballbyball object:
+                    row = BallByBall(
+                        game_id=game_id,
+                        inning=inning_number,
+                        ball_number=ball_number,
+                        batting_team=batting_team_id,
+                        striker_id=striker_id,
+                        nonstriker_id=non_striker_id,
+                        bowler_id=bowler_id,
+                        batter_runs=batter_runs,
+                        extras_runs=extras_runs,
+                        extras_type=extras_type,
+                        wicket=wicket,
+                        wicket_type=wicket_type,
+                        total_team_runs=total_runs,
+                        total_team_wickets=total_wickets
+                    )
+
+                    # append row to list:
+                    ball_by_ball_rows.append(row)
+                    # increment ball number:
+                    ball_number += 1
+            # increment inning number:
+            inning_number += 1
+        
+        # after each game, commit all rows that have been recorded:
+        if ball_by_ball_rows:
+            session.bulk_save_objects(ball_by_ball_rows)
+            session.flush()
+            session.commit()
+            print(f"✅ Inserted {len(ball_by_ball_rows)} ball-by-ball entries for game {game_id}")
+            total_inserted += len(ball_by_ball_rows)
+        else:
+            print("NO ROWS DETECTED FOR THIS GAME!!!")
+        
+        total_games += 1
+        print(f"✅ Done processing {total_games} games!")
+        
+    # print completion statement:
+    print(f"✅ Done adding ball-by-ball data. Total rows inserted: {total_inserted}")
 
 
 
@@ -513,9 +637,6 @@ def main():
     try:
         initialize_db_params()
         
-        # drop players, matches, playing_elevens, ball_by_ball tables:
-        BallByBall.__table__.drop(bind=engine)
-        
         create_all_tables()
         load_all_game_ids()
         
@@ -529,17 +650,14 @@ def main():
         list_of_game_ids = load_all_game_ids()
         
         # add data to master tables (teams, venues, officials, match_formats):
-        # add_matchformats_venues_teams_officials(session, list_of_game_ids)
+        add_matchformats_venues_teams_officials(session, list_of_game_ids)
         
         # add data to more tables (players, matches, playing_elevens):
         add_players_matches_playingelevens(session, list_of_game_ids)
         
         # add data to the ball by ball table:
         add_ballbyball(session, list_of_game_ids)
-        # ...
-        # ...
-        # ... continue with data population logic ...
-        # ...
+
         session.commit()
         
     except OperationalError as e:
