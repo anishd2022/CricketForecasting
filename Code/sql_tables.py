@@ -304,7 +304,7 @@ def add_players_matches_playingelevens(session, game_ids):
     matches_to_add = []
     players_to_add = []
     playing_elevens_to_add = []
-    
+    total_counter = 1
     # loop thru list of all game ids:
     for game_id in game_ids:
         # get the filename and the relative filepath
@@ -342,17 +342,157 @@ def add_players_matches_playingelevens(session, game_ids):
         # MATCH:
         # if the game id is not already in the matches table...
         if game_id not in existing_matches:
+            # flush new players to be added in case POM is a new player that is not yet in the players table:
+            if players_to_add:
+                print(f"✅ Inserting {len(players_to_add)} players...")
+                session.bulk_save_objects(players_to_add)
+                session.flush()
+                players_to_add.clear()
+                existing_players = {p.cricsheet_id: p.id for p in session.query(Player).all()}
             # extract the necessary fields:
             venue_id = venues_map.get(info.get("venue"))
             format_id = formats_map.get(info.get("match_type"))
             toss_winner = teams_map.get(info.get("toss", {}).get("winner"))
             toss_decision = info.get("toss", {}).get("decision")
+            # get both umpire IDs based on where the official name matches in the officials map 
+            umpire_names = info.get("officials", {}).get("umpires", [])
+            ump1 = officials_map.get(umpire_names[0]) if len(umpire_names) > 0 else None
+            ump2 = officials_map.get(umpire_names[1]) if len(umpire_names) > 1 else None
+            if len(umpire_names) < 2:
+                print(f"⚠️ Only {len(umpire_names)} umpire(s) listed in game {game_id}")
+            # get the first day of the game as the game date, and ensure it is stored as a date type:
+            game_date = datetime.strptime(info["dates"][0], "%Y-%m-%d").date()
+            winning_team = teams_map.get(info.get("outcome", {}).get("winner"))
+            # victory margin:
+            win_by = info.get("outcome", {}).get("by", {})
+            win_by_runs = win_by.get("runs")  # could be None
+            win_by_wickets = win_by.get("wickets")  # could be None
+            # innings defeat:
+            innings_defeat = "yes" if "innings" in win_by else "no"
+            # Batting and bowling first teams
+            teams = info.get("teams", [])
+            batting_first_team = None
+            innings = data.get("innings", [])
+            if innings:
+                batting_first_team = innings[0].get("team")
+            bowling_first_team = None
+            if batting_first_team:
+                for team in teams:
+                    if team != batting_first_team:
+                        bowling_first_team = team
+                        break  # Found the other team, stop looping
+            batting_first_team_id = teams_map.get(batting_first_team)
+            bowling_first_team_id = teams_map.get(bowling_first_team)
+            # player of the match:
+            player_of_the_match_id = None
+            pom_names = info.get("player_of_match", [])
+            if pom_names:
+                pom_name = pom_names[0]  # Cricsheet always lists a single name
+                cricsheet_id = registry.get(pom_name)
+                if cricsheet_id:
+                    player_of_the_match_id = existing_players.get(cricsheet_id)
+                    # if POM ID is invalid or name is not found...
+                    if player_of_the_match_id is None:
+                        print(f"⚠️ Player of the match '{pom_name}' with Cricsheet ID '{cricsheet_id}' not found in DB for game {game_id}")
+                else:
+                    print(f"⚠️ Cricsheet ID not found for player of the match '{pom_name}' in game {game_id}")
+            
+            # save match object as "match"        
+            match = Match(
+                game_id=game_id,
+                game_date=game_date,
+                toss_winner=toss_winner,
+                toss_decision=toss_decision,
+                umpire_1=ump1,
+                umpire_2=ump2,
+                venue_id=venue_id,
+                format=format_id,
+                innings_defeat=innings_defeat,
+                winning_team=winning_team,
+                win_by_runs=win_by_runs,
+                win_by_wickets=win_by_wickets,
+                batting_first_team_id=batting_first_team_id,
+                bowling_first_team_id=bowling_first_team_id,
+                player_of_the_match_id=player_of_the_match_id
+            )
+            
+            # add match object:
+            # .append prepares the match for database insertion
+            # .add adds it to the set of already seen matches to ensure no duplicates
+            matches_to_add.append(match)
+            session.bulk_save_objects(matches_to_add)
+            session.flush()
+            session.commit()
+            matches_to_add.clear()
+            existing_matches.add(game_id)
+            print(f"🆕 Added and committed match: {game_id}")
+        
+        # PLAYING ELEVENS:
+        # for each player name for each team in the players section:
+        for team_name, player_names in players_section.items():
+            team_id = teams_map.get(team_name)
+            # raise a value error if you find an unknown team:
+            if not team_id:
+                raise ValueError(f"❌ Unknown team: {team_name} in game {game_id}")
+            for player_name in player_names:
+                cricsheet_id = registry.get(player_name)
+                # raise a value error if the cricsheet ID cannot be found for that player name in the registry:
+                if not cricsheet_id:
+                    raise ValueError(f"❌ Cricsheet ID not found for player: {player_name} in game {game_id}")
+                
+                player_id = existing_players.get(cricsheet_id)
+                if player_id is None:
+                    # Player just added, flush to get ID
+                    session.bulk_save_objects(players_to_add)
+                    session.flush()
+                    players_to_add.clear()
+                    existing_players = {p.cricsheet_id: p.id for p in session.query(Player).all()}
+                    player_id = existing_players[cricsheet_id]
+                    
+                key = (game_id, player_id, team_id)
+                if key not in existing_playing_elevens:
+                    playing_elevens_to_add.append(PlayingEleven(
+                        game_id=game_id,
+                        player_id=player_id,
+                        team_id=team_id
+                    ))
+                    existing_playing_elevens.add(key)
+                    print(f"🆕 Added Playing XI: {player_name} ({team_name}) in game {game_id}")
     
+        print(f"✅ done processing {total_counter} files!")
+        total_counter += 1
+
+        # ✅ Commit playing elevens per game to avoid duplicate insert errors
+        if playing_elevens_to_add:
+            session.bulk_save_objects(playing_elevens_to_add)
+            session.flush()
+            session.commit()
+            print(f"✅ Inserted {len(playing_elevens_to_add)} playing eleven records")
+            # Update in-memory tracker
+            for pe in playing_elevens_to_add:
+                key = (pe.game_id, pe.player_id, pe.team_id)
+                existing_playing_elevens.add(key)
+            playing_elevens_to_add.clear()
+
+        # Commit batched inserts:
+        if players_to_add:
+            session.bulk_save_objects(players_to_add)
+            session.flush()
+            players_to_add.clear()
+            print(f"✅ Inserted {len(players_to_add)} players")
+        
+        if matches_to_add:
+            session.bulk_save_objects(matches_to_add)
+            print(f"✅ Inserted {len(matches_to_add)} matches")
+            session.commit()
+            print("Committed session...")
+
     # print completion statement
-    print("Function yet to be completed...")
+    print("✅ Done adding data to players, matches, and playing_elevens tables!")
 
 
-
+def add_ballbyball(session, game_ids):
+    print("This function is yet to be completed...")
 
 
 
@@ -372,9 +512,13 @@ def main():
     print("Code execution starting...")
     try:
         initialize_db_params()
+        
+        # drop players, matches, playing_elevens, ball_by_ball tables:
+        BallByBall.__table__.drop(bind=engine)
+        
         create_all_tables()
         load_all_game_ids()
-
+        
         # Try to create a session and connect to the DB
         session = Session()
         session.execute(text('SELECT 1'))  # optional: quick sanity check
@@ -383,16 +527,21 @@ def main():
 
         # get list of all game_ids:
         list_of_game_ids = load_all_game_ids()
+        
         # add data to master tables (teams, venues, officials, match_formats):
         # add_matchformats_venues_teams_officials(session, list_of_game_ids)
+        
         # add data to more tables (players, matches, playing_elevens):
         add_players_matches_playingelevens(session, list_of_game_ids)
+        
+        # add data to the ball by ball table:
+        add_ballbyball(session, list_of_game_ids)
         # ...
         # ...
         # ... continue with data population logic ...
         # ...
         session.commit()
-
+        
     except OperationalError as e:
         print("❌ OperationalError: Could not connect to the database.")
         print(e)
