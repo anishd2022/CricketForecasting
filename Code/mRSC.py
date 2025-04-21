@@ -428,8 +428,9 @@ def main():
     print("🔹 Metrics:", metrics)
     
     # set intervention ball and target unit:
-    intervention_ball_number = 20
-    treatment_unit = 5
+    intervention_ball_number = 60
+    treatment_unit = 0
+    # how much weight you want to give to [runs, wickets]
     weights_vector = np.array([1, 1])
     
     # create X1 and Z matrices:
