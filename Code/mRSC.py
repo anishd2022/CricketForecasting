@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, text
+import matplotlib.pyplot as plt
 
 
 engine = 0
@@ -186,6 +187,212 @@ def get_Z_and_X1(tensor, units, metrics, intervention_ball=90, target_unit=0):
 
 
 
+# Helper function to filter out rows in Z (units) that contain any missing values
+
+def filter_units_with_no_missing(Z, unit_ids=None):
+    """
+    Filters Z to keep only rows (units) with no NaN entries.
+
+    Params:
+    - Z: numpy array of shape (N-1, K*T)
+    - unit_ids: optional list/array of unit identifiers of length N-1
+
+    Returns:
+    - Z_filtered: numpy array with only complete rows
+    - kept_indices: indices of rows kept (w.r.t. original Z)
+    - filtered_unit_ids: filtered unit_ids (if provided)
+    """
+    # Identify complete rows (no NaNs)
+    mask = ~np.isnan(Z).any(axis=1)
+    Z_filtered = Z[mask]
+    kept_indices = np.where(mask)[0]
+
+    if unit_ids is not None:
+        filtered_unit_ids = np.array(unit_ids)[mask]
+    else:
+        filtered_unit_ids = None
+
+    print(f"✅ Retained {Z_filtered.shape[0]} out of {Z.shape[0]} units with no missing values.")
+
+    return Z_filtered, kept_indices, filtered_unit_ids
+
+
+
+# Params:
+#   Z: numpy array of shape (N-1, K*T)
+#   lambda_thresh: singular value threshold (λ)
+# Output:
+#   Mc: denoised version of Z with same shape
+#   S: indices of retained singular values
+#   singular_values: full array of singular values (for diagnostics)
+def denoise_Z_using_svd(Z, lambda_thresh):
+    # filter Z to only have units with no missing values:
+    Z_filtered, kept_indices, filtered_unit_ids = filter_units_with_no_missing(Z)
+    # compute observed fraction of values in Z:
+    prop_missing = np.isnan(Z_filtered).sum() / Z_filtered.size
+    observed_fraction = 1.0 - prop_missing
+    
+    # print out Z_filtered characteristics:
+    print("Shape of filtered Z: ", Z_filtered.shape)
+    
+    # perform SVD:
+    U, s, VT = np.linalg.svd(Z_filtered, full_matrices=False)
+    
+    # keep only singular values >= lambda threshold:
+    S = []
+    for i, singular_value in enumerate(s):
+        if singular_value >= lambda_thresh:
+            S.append(i)
+    print(f"🔍 Retained {len(S)} singular values out of {len(s)} above threshold λ = {lambda_thresh}")
+    
+    # reconstruct Z using only top singular values (hard thresholding):
+    # start by creating an zero matrix with same dimensions as Z filtered:
+    Mc = np.zeros_like(Z_filtered)
+    # adds each rank-1 component into Mc:
+    for i in S:
+        Mc += s[i] * np.outer(U[:, i], VT[i, :])
+    
+    # Rescale by observed fraction if Z was sparse/masked
+    Mc = Mc / observed_fraction
+    
+    # return output
+    return Mc, S, s
+
+
+# Construct McT0 from Mc:
+def construct_McT0(Mc, K, T0):
+    """
+    Extract McT0 (pre-intervention donor data)
+    Mc: numpy array (N-1, K*T)
+    Returns:
+    - McT0: (N-1, K*T0), taking T0 time steps from each of K metrics
+    """
+    N_minus_1, KT = Mc.shape
+    T = KT // K
+    indices = []
+    for k in range(K):
+        start = k * T
+        end = start + T0
+        indices.extend(range(start, end))
+    McT0 = Mc[:, indices]
+    return McT0
+
+
+# Create delta matrix given weights for each metric:
+# Params:
+#   weights: a vector of weights corresponding to each metric
+#   T0: the intervention ball number
+# Output:
+#   a diagonal matrix delta whose diagonal values are the weights (each repeated T0 times)
+def create_delta_matrix(weights, T0):
+    repeated_weights = np.repeat(weights, T0)
+    return np.diag(repeated_weights)
+
+# apply metric weights using diagonal matrix Δ:
+# Params: 
+#   McT0: the denoised donor matrix pre-intervention
+#   X1: the tretment unit pre-intervention
+#   delta: the weighting matrix
+# Output:
+#   a weighted McT0 matrix and a weighted X1 matrix
+def apply_metric_weights(McT0, X1, delta):
+    McT0_weighted = McT0 @ delta
+    X1_weighted = X1 @ delta
+    return McT0_weighted, X1_weighted
+    
+
+
+# Solve the weighted least squares regression:
+# we want to put the appropriate weights on each donor unit such that the error is minimized and we can create
+# an accurate counterfactual.
+# Params:
+#   McT0_weighted: (N-1, K*T0) numpy array
+#   X1_weighted: (1, K*T0) numpy array
+# Output:
+#   beta_hat: (N-1,) vector of optimal weights
+def solve_weighted_least_squares(McT0_weighted, X1_weighted):
+    # Transpose the donor matrix to shape (K*T0, N-1)
+    A = McT0_weighted.T  # shape: (K*T0, N-1)
+    # transpose the pre-intervention treatment data to shape (K*T0, 1)
+    b = X1_weighted.T    # shape: (K*T0, 1)
+    
+    # solve least squares:
+    beta_hat, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+    
+    # Flatten to 1D array for convenience
+    return beta_hat.ravel()
+
+
+# Params:
+#   Mc: numpy array of shape (N-1, K*T), denoised donor matrix
+#   beta_hat: vector of shape (N-1,), estimated weights from WLS
+#   K: number of metrics (e.g., 2 for [total_runs, total_wickets])
+# Output:
+#   counterfactuals: array of shape (T, K), synthetic control time series
+#                    for the treatment unit for each metric.
+def reconstruct_counterfactual(Mc, beta_hat, K):
+    # find total T based on matrix dimensions:
+    N_minus_1, KT = Mc.shape
+    T = KT // K
+    # initialize empty counterfactuals matrix:
+    counterfactuals = []
+    
+    # for each metric:
+    for k in range(K):
+        Mc_k = Mc[:, k*T:(k+1)*T]  # Extract Mc^(k): shape (N-1, T)
+        Mc1_k = beta_hat @ Mc_k    # Weighted avg: shape (T,)
+        counterfactuals.append(Mc1_k)   # add to the counterfactuals
+
+    # stack counterfactuals per metric to give 2D matrix structure:
+    return np.stack(counterfactuals, axis=1)  # shape (T, K)
+    
+
+
+# Plot true vs estimated counterfactual values for each metric for the treatment unit:
+# Params:
+#   counterfactual: numpy array (T, K)
+#   tensor: original tensor data (N, T, K)
+#   treatment_unit: index of treated unit
+#   metrics: list of metric names (length K)
+# Output:
+#   Plot
+def plot_counterfactual_vs_truth(counterfactual, tensor, treatment_unit, metrics):
+    true_values = tensor[treatment_unit]  # shape (T, K)
+    T, K = true_values.shape
+    
+    # for each metric...
+    for k in range(K):
+        plt.figure(figsize=(10, 4))
+        plt.plot(range(T), true_values[:, k], label="True", linewidth=2)
+        plt.plot(range(T), counterfactual[:, k], label="Counterfactual", linestyle='--', linewidth=2)
+        plt.xlabel("Ball Number")
+        plt.ylabel(metrics[k])
+        plt.title(f"Treatment Unit ({treatment_unit}): {metrics[k]}")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -220,12 +427,49 @@ def main():
     print("🔹 Sample units:", units[:5])
     print("🔹 Metrics:", metrics)
     
+    # set intervention ball and target unit:
+    intervention_ball_number = 20
+    treatment_unit = 5
+    weights_vector = np.array([1, 1])
+    
     # create X1 and Z matrices:
-    Z, X1, donor_unit_ids = get_Z_and_X1(tensor, units, metrics, intervention_ball=60, target_unit=0)
+    Z, X1, donor_unit_ids = get_Z_and_X1(tensor, units, metrics, intervention_ball=intervention_ball_number, target_unit=treatment_unit)
     # print out matrices characteristics:
     print("Shape of Z: ", Z.shape)
     print("Shape of X1: ", X1.shape)
 
+    # de-noise the Z matrix using singular value decomposition (SVD):
+    Mc, S, s = denoise_Z_using_svd(Z, lambda_thresh=20)
+    print("Shape of Mc: ", Mc.shape)
+    print(Mc[46, :])
+    
+    # construct McT0 from Mc:
+    McT0 = construct_McT0(Mc, K=len(metrics), T0=intervention_ball_number)
+    print("Shape of McT0: ", McT0.shape)
+    print(McT0[46, :])
+    
+    # create delta matrix from the weights:
+    delta = create_delta_matrix(weights=weights_vector, T0=intervention_ball_number)
+    print("Shape of delta matrix: ", delta.shape)
+    
+    # apply delta matrix onto McT0 and X1:
+    McT0_weighted, X1_weighted = apply_metric_weights(McT0, X1, delta)
+    print("Shape of McT0 weighted: ", McT0_weighted.shape)
+    print("Shape of X1 weighted: ", X1_weighted.shape)
+    
+    # get beta vector:
+    beta_vec = solve_weighted_least_squares(McT0_weighted, X1_weighted)
+    print("Shape of beta vector: ", beta_vec.shape)
+    print(beta_vec)
+    
+    # get counterfactual:
+    counterfactual = reconstruct_counterfactual(Mc, beta_hat=beta_vec, K=len(metrics))
+    print("Shape of counterfactual: ", counterfactual.shape)
+    print(counterfactual)
+    
+    # plot counterfactual estimates vs truth:
+    plot_counterfactual_vs_truth(counterfactual, tensor, treatment_unit, metrics)
+    
     # return 0
     return 0
 
