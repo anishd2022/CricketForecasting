@@ -429,9 +429,11 @@ def main():
     
     # set intervention ball and target unit:
     intervention_ball_number = 60
-    treatment_unit = 0
+    treatment_unit = 528
     # how much weight you want to give to [runs, wickets]
     weights_vector = np.array([1, 1])
+    # lambda threshold
+    lambda_threshold = 5
     
     # create X1 and Z matrices:
     Z, X1, donor_unit_ids = get_Z_and_X1(tensor, units, metrics, intervention_ball=intervention_ball_number, target_unit=treatment_unit)
@@ -440,7 +442,7 @@ def main():
     print("Shape of X1: ", X1.shape)
 
     # de-noise the Z matrix using singular value decomposition (SVD):
-    Mc, S, s = denoise_Z_using_svd(Z, lambda_thresh=20)
+    Mc, S, s = denoise_Z_using_svd(Z, lambda_thresh=lambda_threshold)
     print("Shape of Mc: ", Mc.shape)
     print(Mc[46, :])
     
