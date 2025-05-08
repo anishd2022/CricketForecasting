@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, text
 import matplotlib.pyplot as plt
+import optuna
+import random
+from numpy.linalg import solve
 
 
 engine = 0
@@ -188,7 +191,6 @@ def get_Z_and_X1(tensor, units, metrics, intervention_ball=90, target_unit=0):
 
 
 # Helper function to filter out rows in Z (units) that contain any missing values
-
 def filter_units_with_no_missing(Z, unit_ids=None):
     """
     Filters Z to keep only rows (units) with no NaN entries.
@@ -300,6 +302,7 @@ def apply_metric_weights(McT0, X1, delta):
     X1_weighted = X1 @ delta
     return McT0_weighted, X1_weighted
     
+    
 
 
 # Solve the weighted least squares regression:
@@ -374,6 +377,96 @@ def plot_counterfactual_vs_truth(counterfactual, tensor, treatment_unit, metrics
         plt.show()
 
 
+# Function to compute post-intervention MSE for a given counterfactual and treatment unit
+# Params:
+# - counterfactual: array of shape (T, K)
+# - true_tensor: original tensor of shape (N, T, K)
+# - treatment_unit: index of treated unit
+# - intervention_ball: the ball at which the intervention starts (T0)
+# Returns:
+# - list of MSEs for each metric (length K)
+def compute_post_intervention_mse(counterfactual, true_tensor, treatment_unit, intervention_ball):
+    T, K = counterfactual.shape
+    mse_list = []
+    true_post = true_tensor[treatment_unit, intervention_ball:, :]
+    pred_post = counterfactual[intervention_ball:, :]
+    valid_metric_found = False
+
+    for k in range(K):
+        valid_mask = ~np.isnan(true_post[:, k])
+        if np.any(valid_mask):
+            valid_metric_found = True
+            mse = np.mean((pred_post[valid_mask, k] - true_post[valid_mask, k]) ** 2)
+            mse_list.append(mse)
+        else:
+            print(f"⚠️ No valid post-intervention data for metric {k} in unit {treatment_unit}")
+            mse_list.append(np.nan)
+
+    if not valid_metric_found:
+        return None  # signal that this trial is unusable
+
+    return mse_list
+
+
+# Function to optimize hyperparameters using Optuna
+# use random subset of units to optimize on for each trial:
+# Params:
+# - tensor, units, metrics: as before
+# - intervention_ball, treatment_unit: as before
+# Output:
+# - best (lambda, weight) and associated MSEs
+# this tries to find the parameters that minimize the mean of the MSE of runs
+def optuna_objective(trial, tensor, units, metrics, intervention_ball, max_units=50):
+    lam = trial.suggest_float("lambda", 1.0, 30.0)
+    weight_run = trial.suggest_float("weight_run", 0.0000000001, 10000000000)
+    weight_wicket = trial.suggest_float("weight_wicket", 0.0000000001, 10000000000)
+    weights = np.array([weight_run, weight_wicket])
+
+    total_mse_across_units = []
+
+    sampled_units = random.sample(range(len(units)), min(max_units, len(units)))
+
+    for idx, treatment_unit in enumerate(sampled_units):
+        try:
+            print(f"🔁 [{idx + 1}/{len(sampled_units)}] Evaluating treatment unit {treatment_unit}")
+            Z, X1, _ = get_Z_and_X1(tensor, units, metrics, intervention_ball, treatment_unit)
+            Mc, _, _ = denoise_Z_using_svd(Z, lambda_thresh=lam)
+            McT0 = construct_McT0(Mc, K=len(metrics), T0=intervention_ball)
+            delta = create_delta_matrix(weights=weights, T0=intervention_ball)
+            McT0_w, X1_w = apply_metric_weights(McT0, X1, delta)
+            beta_vec = solve_weighted_least_squares(McT0_w, X1_w)
+            counterfactual = reconstruct_counterfactual(Mc, beta_hat=beta_vec, K=len(metrics))
+            mse_list = compute_post_intervention_mse(counterfactual, tensor, treatment_unit, intervention_ball)
+            if mse_list is None or np.isnan(mse_list).any():
+                print(f"⚠️ Skipping unit {treatment_unit} due to invalid MSE")
+                continue
+            run_mse = mse_list[0]
+            print(f"   ➤ MSE (runs only) for unit {treatment_unit}: {run_mse:.4f}")
+            total_mse_across_units.append(run_mse)
+        except Exception as e:
+            print(f"⚠️ Skipping unit {treatment_unit} due to error: {e}")
+            continue  # skip units with failure
+
+    final_mse = np.mean(total_mse_across_units) if total_mse_across_units else float("inf")
+    print(f"🎯 Trial completed with λ={lam:.2f}, weights={[weight_run, weight_wicket]} → MSE={final_mse:.4f}")
+    return final_mse
+
+
+# runs hyperparameter search to find best hyperparams:
+def run_optuna_search(tensor, units, metrics, intervention_ball, n_trials=20, max_units=50):
+    study = optuna.create_study(direction="minimize")
+    study.optimize(lambda trial: optuna_objective(trial, tensor, units, metrics, intervention_ball, max_units), n_trials=n_trials)
+
+    best_params = study.best_params
+    best_value = study.best_value
+    print("\n✅ Best Parameters from Optuna:")
+    print(f"Lambda: {best_params['lambda']:.4f}")
+    print(f"Weights: [Run: {best_params['weight_run']:.4f}, Wicket: {best_params['weight_wicket']:.4f}]")
+    print(f"Best Avg MSE across units: {best_value:.4f}")
+
+    return best_params, best_value
+
+
 
 
 
@@ -403,6 +496,7 @@ def plot_counterfactual_vs_truth(counterfactual, tensor, treatment_unit, metrics
 
 # MAIN:
 def main():
+    '''
     # initialize db parameters
     initialize_db_params()
     # start session and connect to database
@@ -412,7 +506,6 @@ def main():
     print("✅ Database session started successfully.")
     
     # create tensor of all data 
-    '''
     tensor, units, metrics = get_tensor_for_all_games_of_a_format(session)
     '''
     
@@ -428,23 +521,35 @@ def main():
     print("🔹 Metrics:", metrics)
     
     # set intervention ball and target unit:
-    intervention_ball_number = 60
-    treatment_unit = 528
+    intervention_ball_number = 20
+    treatment_unit = 3435
     # how much weight you want to give to [runs, wickets]
     weights_vector = np.array([1, 1])
+    # weights_vector_2 = np.array([1, 1])
     # lambda threshold
-    lambda_threshold = 5
+    lambda_threshold = 7
     
     # create X1 and Z matrices:
     Z, X1, donor_unit_ids = get_Z_and_X1(tensor, units, metrics, intervention_ball=intervention_ball_number, target_unit=treatment_unit)
     # print out matrices characteristics:
     print("Shape of Z: ", Z.shape)
     print("Shape of X1: ", X1.shape)
+    print(Z[46, :])
 
     # de-noise the Z matrix using singular value decomposition (SVD):
     Mc, S, s = denoise_Z_using_svd(Z, lambda_thresh=lambda_threshold)
     print("Shape of Mc: ", Mc.shape)
     print(Mc[46, :])
+    
+    # plot singular values:
+    '''
+    plt.plot(s[1:], marker='o')
+    plt.title("Singular Value Spectrum")
+    plt.xlabel("Index")
+    plt.ylabel("Singular Value")
+    plt.grid(True)
+    plt.show()
+    '''
     
     # construct McT0 from Mc:
     McT0 = construct_McT0(Mc, K=len(metrics), T0=intervention_ball_number)
@@ -453,25 +558,43 @@ def main():
     
     # create delta matrix from the weights:
     delta = create_delta_matrix(weights=weights_vector, T0=intervention_ball_number)
+    # delta_2 = create_delta_matrix(weights=weights_vector_2, T0=intervention_ball_number)
     print("Shape of delta matrix: ", delta.shape)
+    print(delta)
     
     # apply delta matrix onto McT0 and X1:
     McT0_weighted, X1_weighted = apply_metric_weights(McT0, X1, delta)
+    # McT0_weighted_2, X1_weighted_2 = apply_metric_weights(McT0, X1, delta_2)
     print("Shape of McT0 weighted: ", McT0_weighted.shape)
     print("Shape of X1 weighted: ", X1_weighted.shape)
+    # print(McT0_weighted[46, :])
     
     # get beta vector:
     beta_vec = solve_weighted_least_squares(McT0_weighted, X1_weighted)
-    print("Shape of beta vector: ", beta_vec.shape)
-    print(beta_vec)
-    
+    # beta_vec_2 = solve_weighted_least_squares(McT0_weighted_2, X1_weighted_2)
+    # print("Shape of beta vector: ", beta_vec.shape)
+    # print(beta_vec)
+    # print("diff:", np.linalg.norm(beta_vec - beta_vec_2))
     # get counterfactual:
     counterfactual = reconstruct_counterfactual(Mc, beta_hat=beta_vec, K=len(metrics))
-    print("Shape of counterfactual: ", counterfactual.shape)
-    print(counterfactual)
+    # print("Shape of counterfactual: ", counterfactual.shape)
+    # print(counterfactual)
+    
     
     # plot counterfactual estimates vs truth:
     plot_counterfactual_vs_truth(counterfactual, tensor, treatment_unit, metrics)
+    
+    
+    # compute post intervention MSE for a given unit / intervention ball:
+    mse = compute_post_intervention_mse(counterfactual, tensor, treatment_unit, intervention_ball_number)
+    # print(mse)
+    
+    '''
+    # TRY TUNING PARAMS:
+    best_params, best_avg_mse = run_optuna_search(tensor, units, metrics, intervention_ball_number, n_trials=50, max_units=50)
+    print("Best params: ", best_params)
+    print("Best avg mse: ", best_avg_mse)
+    '''
     
     # return 0
     return 0
@@ -480,3 +603,34 @@ def main():
 if __name__ == "__main__":
     main()
     
+
+
+
+'''
+✅ Best Parameters from Optuna:
+Lambda: 7.7112
+Weights: [Run: 1021525777.7835, Wicket: 2635021527.6955]
+Best Avg MSE across units: 79.8973
+Best params:  {'lambda': 7.711245476560286, 'weight_run': 1021525777.7834821, 'weight_wicket': 2635021527.695471}
+Best total mse:  79.89730086875244
+'''
+
+
+
+'''
+# set intervention ball and target unit:
+    intervention_ball_number = 60
+    treatment_unit = 697
+    # how much weight you want to give to [runs, wickets]
+    weights_vector = np.array([1.0493, 1.9604])
+    # lambda threshold
+    lambda_threshold = 3.0848
+'''
+# The beta vector does not change despite changing the weights_vector...
+# weights_vector = np.array([1.0493, 1.9604])
+# [ 0.00075673 -0.00032352 -0.00023451 ...  0.00215572 -0.00025168
+#  -0.00087367]
+
+# weights_vector = np.array([1.0493, 100.9604])
+# [ 0.00075673 -0.00032352 -0.00023451 ...  0.00215572 -0.00025168
+#  -0.00087367]
