@@ -502,7 +502,7 @@ def main():
     feature_balls = [24, 36, 48, 60]  # balls after 4, 6, 8, and 10 overs
     target_ball = 90                  # predict score after 15 overs
 
-    unit = 1883
+    unit = 2371
     intervention = 60
     arima_order = (2, 1, 2)
     lambda_wicket = 20
