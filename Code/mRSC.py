@@ -149,6 +149,80 @@ def get_tensor_for_all_games_of_a_format(session, match_format="T20"):
 
 
 
+def get_tensor_for_all_games_of_a_format_include_inning(session, match_format="T20"):
+    # find the format id associated with the match format
+    format_id = session.query(MatchFormat.id).filter(MatchFormat.match_format == match_format).scalar()
+    # get all game ids associated with that match format
+    game_ids = session.query(Match.game_id).filter(Match.format == format_id).all()
+    game_ids = [g[0] for g in game_ids]
+    
+    # get max balls per inning:
+    if match_format == "T20" or match_format == "IT20":
+        max_balls_allowed = 120
+    elif match_format == "ODI" or match_format == "ODM":
+        max_balls_allowed = 300
+    
+    merged = []
+    # loop over each game
+    for idx, gid in enumerate(game_ids, start=1):
+        print(f"🔍 Processing game {idx} out of {len(game_ids)}: game_id = {gid}")
+        # get ball by ball data for this specific game_id
+        df = get_game_data(session, gid)
+
+        # if there was a super over, only consider the actual game, not the super over
+        if df['inning'].nunique() > 2:
+            print(f"ℹ️ Found game with super overs (more than 2 innings): game_id = {gid}. Skipping super over data.")
+        df = df[df['inning'].isin([1, 2])]  # Exclude super overs
+        # label each unit with the format of {game_id}_inn{number}
+        df['unit_id'] = df['game_id'].astype(str) + "_inn" + df['inning'].astype(str)
+        # loop over each inning in a specific game:
+        for unit in df['unit_id'].unique():
+            sub_df = df[df['unit_id'] == unit].sort_values(by='ball_number').reset_index(drop=True)
+            cleaned = merge_extras_for_ball_by_ball_for_specific_game_inning(sub_df)
+            
+            # if rows still more than max balls for that format
+            if len(cleaned) > max_balls_allowed:
+                print(f"⚠️ Unit {unit} has more than {max_balls_allowed} rows: {len(cleaned)} rows — trimming to 120.")
+                cleaned = cleaned.iloc[:max_balls_allowed]
+            
+            # if innings is shorter than max balls, pad with NANs:
+            if len(cleaned) < max_balls_allowed:
+                pad_len = max_balls_allowed - len(cleaned)
+                padding = pd.DataFrame({
+                    'game_id': [gid] * pad_len,
+                    'inning': [sub_df['inning'].iloc[0]] * pad_len,
+                    'ball_number': [np.nan] * pad_len,
+                    'total_team_runs': [np.nan] * pad_len,
+                    'total_team_wickets': [np.nan] * pad_len,
+                    'unit_id': [unit] * pad_len
+                })
+                cleaned = pd.concat([cleaned, padding], ignore_index=True)
+            
+            cleaned['unit_id'] = unit
+            merged.append(cleaned)
+
+    cleaned_df = pd.concat(merged, ignore_index=True)
+    units = cleaned_df['unit_id'].unique()
+    unit_map = {uid: idx for idx, uid in enumerate(units)}
+    cleaned_df['unit_idx'] = cleaned_df['unit_id'].map(unit_map)
+    max_ball_number = cleaned_df.groupby('unit_id').size().max()
+
+    tensor = np.full((len(units), max_ball_number, 3), np.nan)
+    for row in cleaned_df.itertuples():
+        i = row.unit_idx
+        t = row.Index % 120
+        tensor[i, t, 0] = row.total_team_runs
+        tensor[i, t, 1] = row.total_team_wickets
+        tensor[i, t, 2] = row.inning
+
+    # Save tensor to file for future use
+    np.savez_compressed("t20_tensor_data_with_inning.npz", tensor=tensor, units=units, metrics=['total_team_runs', 'total_team_wickets', 'inning'])
+    
+    return tensor, units, ['total_team_runs', 'total_team_wickets', 'inning']
+
+
+
+
 # Constructs: Z (donor tensor) and X1 (treatment unit's pre-intervention data): 
 # Params:
 #   tensor: numpy array of 3 dimensions with shape (N units, T balls, K metrics)
@@ -506,7 +580,7 @@ def main():
     print("✅ Database session started successfully.")
     
     # create tensor of all data 
-    tensor, units, metrics = get_tensor_for_all_games_of_a_format(session)
+    tensor, units, metrics = get_tensor_for_all_games_of_a_format_include_inning(session)
     '''
     
     # load the saved T20 ball by ball data tensor:
@@ -520,9 +594,11 @@ def main():
     print("🔹 Sample units:", units[:5])
     print("🔹 Metrics:", metrics)
     
+    
+    
     # set intervention ball and target unit:
-    intervention_ball_number = 20
-    treatment_unit = 3435
+    intervention_ball_number = 60
+    treatment_unit = 3476
     # how much weight you want to give to [runs, wickets]
     weights_vector = np.array([1, 1])
     # weights_vector_2 = np.array([1, 1])
@@ -541,6 +617,7 @@ def main():
     print("Shape of Mc: ", Mc.shape)
     print(Mc[46, :])
     
+    
     # plot singular values:
     '''
     plt.plot(s[1:], marker='o')
@@ -550,6 +627,7 @@ def main():
     plt.grid(True)
     plt.show()
     '''
+    
     
     # construct McT0 from Mc:
     McT0 = construct_McT0(Mc, K=len(metrics), T0=intervention_ball_number)
@@ -588,6 +666,7 @@ def main():
     # compute post intervention MSE for a given unit / intervention ball:
     mse = compute_post_intervention_mse(counterfactual, tensor, treatment_unit, intervention_ball_number)
     # print(mse)
+    
     
     '''
     # TRY TUNING PARAMS:

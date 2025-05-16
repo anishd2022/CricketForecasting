@@ -2,7 +2,12 @@
 title: "Exploring Methods to Forecast T20 Cricket Game Scores"
 author: "Anish Deshpande"
 date: "`r Sys.Date()`"
-output: pdf_document
+output: 
+  pdf_document:
+    number_sections: true
+    fig_caption: true
+header-includes:
+  - \usepackage{float}
 ---
 
 ```{r setup, include=FALSE}
@@ -12,51 +17,240 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Abstract
 
-This project focuses on various methods to forecast final scores in T20 games during the course of the game.
+Accurate real-time forecasting of final scores in T20 cricket can provide critical insights for team strategy, broadcasters, and bettors. In this project, we explore multiple modeling approaches to predict the final score of an inning given its partial progression. Using a curated dataset of over 22,000 T20 innings from Cricsheet, we construct a tensor representation of ball-by-ball cumulative runs and wickets. We evaluate the performance of several forecasting methods, including linear regression, ARIMA time series models, multi-dimensional robust synthetic control (mRSC), K-nearest neighbor (KNN) trajectory simulation, and Bayesian activation modeling via the `mactivate` package in R. We find that while linear regression offers strong early benchmarks, more sophisticated donor-based and Bayesian methods provide greater flexibility and robustness, especially post-intervention. Our results highlight the importance of incorporating historical game patterns and structural dynamics in modeling cricket scores over time.
 
 # Introduction
 
-T20 cricket is a game format that has risen in popularity in recent years. In limited overs cricket, there are two innings, each consisting of 20 overs (or 120 balls, since there are 6 balls per over). The game starts with a coin flip, and the winning team decides whether they would like to bat or bowl first. Team A is sent in to bat in the first inning, and they have the full 20 overs to score as many runs as possible, unless they lose 10 wickets before that period. Then, in the second inning, Team B has to surpass the score set by Team A in the first innings in order to win. The game ends once Team B surpasses the target score, plays all 20 of their overs, or loses all 10 of their wickets.
+T20 cricket, the shortest international format of the game, has seen an explosion in popularity over the last two decades, thanks to its fast pace, strategic complexity, and entertainment value. Unlike Test or One-Day matches, T20 games are limited to a single inning per team, with each inning restricted to 20 overs (i.e., 120 legal deliveries). The match begins with a coin toss, where the winning team elects to bat or bowl first. Team A bats first, aiming to score as many runs as possible before either losing all 10 wickets or completing 20 overs. Team B then attempts to chase this target, and the match concludes when the target is surpassed, the full quota of overs is bowled, or all 10 wickets fall.
 
-A well-known fact about T20 cricket is that the short duration of the game allows teams to bat quite aggressively and take more risks. However, it is usually seen that when teams lose quick wickets, they tend to play more cautiously in order to keep wickets in hand, and this usually lowers their scoring rate. These subtle patterns and tendencies between runs, wickets, and overs are what we hope to understand in order to predict and forecast scores in an ongoing inning.
+What makes T20 cricket particularly dynamic is the high scoring rate and rapid momentum shifts. Because of the limited duration, batters tend to play aggressively, aiming for boundaries rather than survival. However, this risk-heavy approach is tempered by wicket loss: teams that lose early wickets often shift to a more conservative style of play to preserve their remaining batters. This interplay between aggression and caution — modulated by overs remaining, runs scored, and wickets lost — gives rise to rich scoring patterns that evolve ball by ball.
+
+Accurately modeling and forecasting the evolution of an inning, especially after a partial trajectory is observed (e.g., after 8 overs), can be extremely valuable for decision-makers. Coaches may use such models to assess expected scores and adjust strategy; broadcasters and commentators can enhance viewer engagement; and sportsbooks or bettors can price game outcomes more accurately.
+
+In this project, we aim to forecast the final score of an inning given partial information observed up to a specified intervention point. We explore various statistical and machine learning approaches that leverage both the inning's own trajectory and a large database of historical T20 innings to generate accurate and interpretable predictions.
 
 # Problem Statement
 
-Assume we have ball-by-ball data for \( N \) number of innings across \( T \) balls and \( K \) metrics. The metrics of our interest are cumulative runs and cumulative wickets up to that point in the inning. We arrange this data in a 3-dimensional matrix (tensor) of dimensions \( [N, T, K] \) for the rest of our analysis.
+In this project, we aim to model and forecast the progression of a T20 cricket inning using partially observed data. Each inning is represented by a time series of cumulative metrics — specifically, total runs scored and total wickets lost — recorded ball by ball. Collectively, our dataset spans $N$ innings, each with up to $T = 120$ balls, and $K = 2$ key metrics. We organize this information into a 3-dimensional tensor $\mathcal{X} \in \mathbb{R}^{N \times T \times K}$, where $\mathcal{X}_{i, t, k}$ captures the cumulative value of metric $k$ for inning $i$ at ball $t$.
 
-Let \( T_0 \) be the time of intervention. Then from time \( T = 0 \) until \( T_0 \) is considered pre-intervention, and time \( T_0 \) to \( T \) is considered post-intervention. We would like to predict the post-intervention data for a given inning \( n \) given its pre-intervention data, as well as the complete ball-by-ball data of all other \( N-1 \) innings.
+Let $T_0$ denote a designated intervention point within an inning. We define the trajectory from ball $0$ to $T_0$ as the **pre-intervention** segment, and from $T_0 + 1$ to $T$ as the **post-intervention** segment. Our objective is to accurately forecast the post-intervention trajectory of a given inning $i^*$ — referred to as the **treatment unit** — using its own pre-intervention history along with the complete trajectories of the remaining $N - 1$ innings, which serve as **donor units**.
 
-In the context of a cricket game, an example would be the following: Team A comes in to bat first and is currently 60/2 after 8 overs. We want to predict their score trajectory for the rest of the innings based on their pre-intervention trajectory, while also drawing and learning from the data of all other innings’ trajectories. We call all these other innings the **donor units**, and the inning we are interested in the **treatment unit**.
+For example, consider a scenario where Team A is batting first and has reached a score of 60 runs for the loss of 2 wickets after 8 overs (i.e., 48 balls). Given this partial trajectory, we seek to predict the team’s remaining progression over the next 72 balls. To do so, we compare its pre-intervention behavior with similar innings from historical data and synthesize plausible future outcomes using one of several modeling techniques.
+
+This setup mirrors ideas from synthetic control and sequential forecasting frameworks, where the goal is to infer future or counterfactual behavior by borrowing strength from a large, structured archive of past instances.
 
 # Data Collection
 
-All ball-by-ball data was collected through downloading JSON files for 18,500+ cricket matches over the past 20 years from cricsheet.org. Once the data was downloaded, it was parsed to collect relevant game and ball-by-ball information, and the data was then populated into a MySQL AWS relational database.
+The primary data for this project was sourced from [cricsheet.org](https://cricsheet.org), an open-access platform that provides detailed ball-by-ball records of professional cricket matches in JSON format. We downloaded files for over 18,500 matches played over the past 20 years, including both international fixtures and major domestic T20 leagues such as the Indian Premier League (IPL), Big Bash League (BBL), and others.
 
-SQL was used to extract the appropriate \( [N, T, K] \) matrix for all T20 games over the last 20 years. The dimensions of this tensor were \( (22312, 120, 2) \). The data was stored efficiently in a `.npz` file for further analysis, which is essentially a compressed way to store numpy arrays.
+Each JSON file contains rich structured information, including team rosters, innings summaries, and individual ball events (e.g., runs scored, wickets taken, extras, and player dismissals). Using a custom Python parser, we extracted and cleaned the relevant game-level and delivery-level features. This involved resolving player identifiers, inferring innings structure, handling missing or corrupt entries, and standardizing cumulative run and wicket tallies across deliveries.
+
+To manage the data at scale, we stored it in a MySQL relational database hosted on AWS. Tables were designed to hold match metadata, player mappings, team configurations, and full ball-by-ball logs, enabling flexible querying for downstream analysis. We used `SQLAlchemy` and `pymysql` in Python for structured interaction with the database.
+
+For the purposes of modeling, we focused specifically on T20-format matches and extracted all innings into a 3-dimensional tensor of shape \((22312, 120, 2)\), where:
+
+- The first dimension corresponds to each individual inning.
+- The second dimension spans the 120 legal deliveries (balls) of a full 20-over inning.
+- The third dimension holds two cumulative metrics: total runs scored and total wickets lost.
+
+This tensor was saved as a `.npz` file — a compressed NumPy archive format — to allow for efficient loading and access during model training and evaluation. This setup ensures high computational efficiency while retaining all the temporal resolution of the original ball-by-ball data.
+
+The tensor can be somewhat visualized using this graphic:
+
+```{r fig4, echo=FALSE, out.width='70%', fig.cap="Visualization of Tensor.", fig.pos='H'}
+knitr::include_graphics("Images/TensorVisualization.png")
+```
+
+The SQL relational database structure is as follows:
+
+```{r fig5, echo=FALSE, out.width='100%', fig.cap="mySQL Database Structure.", fig.pos='H'}
+knitr::include_graphics("Images/CricDBStructure.png")
+```
+
+Note that the data collected in the database includes all types of game formats (T20, ODI, Test, etc.), and attempts to retain as much information as possible from the raw JSON files. Even though the rest of our analysis focuses on solely the T20 games, we believe it will be useful to store as much information as possible, so that if we would like to do further analysis in the future or perhaps a comparative analysis between formats, we will have that data readily available. 
+
 
 # Methods
 
+This section explores the various forecasting methods used:
+
 ## Linear Regression
 
-We start off by implementing linear regression as a baseline model, where we regress the runs scored in overs 2, 4, 6, 8, and 10 to predict the score at over 12. We then use the same predictors to predict the score at over 15. We evaluate the \( R^2 \) returned by these models and use them as a baseline to see how much better our other approaches perform.
+We begin by implementing a linear regression model as a baseline to forecast the final score of an inning based on early-inning performance. Specifically, we model the cumulative runs at a future ball \( t_{\text{target}} \) using cumulative runs observed at a set of earlier balls \( t_1, t_2, \dots, t_p \), where each \( t_i < t_{\text{target}} \).
 
-The model is:
+Our dataset is organized as a 3-dimensional tensor \( \mathcal{X} \in \mathbb{R}^{N \times T \times 2} \), where:
 
+- \( N \) is the number of innings (in our case, 22,312),
+- \( T = 120 \) is the number of deliveries in a full T20 inning,
+- The third dimension represents the metrics of interest: total cumulative runs and total cumulative wickets at each ball.
+
+For each inning \( i \), we define the predictor vector as:
 $$
-Y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_5 x_5 + \epsilon
+\mathbf{x}_i = \begin{bmatrix}
+\mathcal{X}_{i, t_1, 0} \\
+\mathcal{X}_{i, t_2, 0} \\
+\vdots \\
+\mathcal{X}_{i, t_p, 0}
+\end{bmatrix}
+\quad \text{and the target as} \quad y_i = \mathcal{X}_{i, t_{\text{target}}, 0}
 $$
 
-where \( x_i \) represents cumulative runs at a specific earlier over.
+We fit the linear model:
+$$
+y_i = \beta_0 + \sum_{j=1}^p \beta_j x_{i,j} + \epsilon_i
+$$
+
+In our experiment, we chose predictors at ball numbers \( t_1 = 24 \), \( t_2 = 36 \), \( t_3 = 48 \), and \( t_4 = 60 \), corresponding to the cumulative runs at the end of overs 4, 6, 8, and 10. We evaluate the model's predictive performance at:
+
+- \( t_{\text{target}} = 72 \): end of 12 overs,
+- \( t_{\text{target}} = 90 \): end of 15 overs.
+
+The resulting \( R^2 \) values, which represent the proportion of variance in the target explained by the predictors, serve as baseline metrics to compare against more complex models later in the paper.
+
+We predict the 12th over score from the score at overs 4, 6, 8, and 10, and we get an **$R^2$ of 0.93**. Next, we predict the 15th over score using the same predictors, and we get an **$R^2$ of 0.80**. We see that forecasting small distances into the future using linear regression is quite accurate, however as we extend the forecast, the accuracy can quickly drop. 
+
 
 ## mRSC (Multi-dimensional Robust Synthetic Control)
 
-Based on the model proposed by Vishal Misra et al., we attempt to replicate a robust synthetic control method using low-rank matrix completion for donor-based forecasting. We estimate a low-rank matrix from pre-intervention trajectories and extrapolate the missing post-intervention trajectory.
+Inspired by the method proposed by Vishal Misra et al., we explore a **robust synthetic control** framework for forecasting cumulative run trajectories in T20 cricket. The method builds on the idea of estimating **low-rank latent structure** across innings, by leveraging similarities in the **pre-intervention trajectory** to predict the **post-intervention trajectory**.
 
-(Explain full SVD + reconstruction method)
+We fix an **intervention point** \( T_0 \), and reshape the data for a single metric \( k \) (say, runs) into a 2D matrix:
+
+$$
+X_k \in \mathbb{R}^{N \times T} \quad \text{with each row } X_k^{(i)} \text{ representing an innings trajectory}
+$$
+
+We define:
+
+- \( X_k^{(i)} = [X_{i,0,k}, X_{i,1,k}, \dots, X_{i,T_0-1,k} \,|\, X_{i,T_0,k}, \dots, X_{i,T-1,k}] \)
+- Let \( X^{\text{pre}} \in \mathbb{R}^{N \times T_0} \), the matrix of pre-intervention trajectories,
+- Let \( X^{\text{post}} \in \mathbb{R}^{N \times (T - T_0)} \), the post-intervention matrix (with some missing entries).
+
+Our goal is to **forecast the missing post-intervention trajectory for a treatment unit**, say row \( i = 1 \), using the remaining \( N-1 \) donor units.
+
+---
+
+### Low-Rank Matrix Completion with SVD
+
+We concatenate the donors' trajectories (excluding the treatment unit) into a matrix \( Z \in \mathbb{R}^{(N-1) \times T} \), where we assume the underlying matrix has a low-rank structure due to shared dynamics across innings.
+
+We apply **Singular Value Decomposition (SVD)** to the pre-intervention part of this matrix:
+
+$$
+Z^{\text{pre}} = U \Sigma V^\top
+$$
+
+To remove noise and retain only the dominant structure, we threshold singular values using a hyperparameter \( \lambda \), and construct a **rank-\( r \)** approximation:
+
+$$
+Z^{\text{pre}} \approx U_r \Sigma_r V_r^\top
+$$
+
+We then project the treatment unit's pre-intervention vector \( X_1^{\text{pre}} \) into this low-rank donor space and solve for weights \( w \in \mathbb{R}^{N-1} \) such that:
+
+$$
+X_1^{\text{pre}} \approx w^\top Z^{\text{pre}}
+$$
+
+The same weights are then applied to donor **post-intervention** vectors to synthesize the **counterfactual trajectory**:
+
+$$
+\widehat{X}_1^{\text{post}} = w^\top Z^{\text{post}}
+$$
+
+---
+
+### Summary of Steps
+
+1. **Construct** donor matrix \( Z \in \mathbb{R}^{(N-1) \times T} \)
+2. **Split** into \( Z^{\text{pre}} \) and \( Z^{\text{post}} \) around the intervention time \( T_0 \)
+3. **Apply SVD** and truncate using singular values above threshold \( \lambda \)
+4. **Project** treatment trajectory onto donor space to estimate weights
+5. **Reconstruct** forecast via donor weights and \( Z^{\text{post}} \)
+
+---
+
+### Notes on Robustness
+
+To handle missing values (e.g., due to early innings termination), we apply **masking** during the decomposition and weight fitting steps, ensuring that only fully observed donor trajectories are included in the low-rank model.
+
+This approach allows for a nonparametric, interpretable reconstruction of scoring dynamics, grounded in empirical similarities across games.
+
+Here are some results we got when forecasting on a specific inning, using $T_0 = 60$ as the intervention point. The structure of this algorithm allows us to forecast not only runs, but also wickets as the game progresses past the intervention point. 
+
+```{r, echo=FALSE, out.width='100%', fig.cap="mRSC Runs Forecast on a specific inning.", fig.pos='H'}
+knitr::include_graphics("Images/mRSCRunsForecast.png")
+```
+
+```{r, echo=FALSE, out.width='100%', fig.cap="mRSC Wickets Forecast on a specific inning.", fig.pos='H'}
+knitr::include_graphics("Images/mRSCWicketsForecast.png")
+```
 
 ## ARIMA
 
 We fit ARIMA(2,1,2) models to individual cumulative run time series up to the intervention point and forecast forward. The model captures autocorrelation and local trends in the run sequence.
+
+To capture short-term autocorrelations and temporal dynamics in scoring, we fit an Autoregressive Integrated Moving Average (ARIMA) model of order \( (2, 1, 2) \) to the **cumulative run trajectory** of each inning up to a predefined intervention ball \( T_0 \). The fitted ARIMA model extracts time-series-specific coefficients that help characterize each innings’ momentum and volatility.
+
+### ARIMA Model Formulation
+
+Let \( y_t \) denote the cumulative runs at ball \( t \). The differenced series \( \Delta y_t = y_t - y_{t-1} \) (since \( d = 1 \)) is modeled as:
+
+$$
+\Delta y_t = \phi_1 \Delta y_{t-1} + \phi_2 \Delta y_{t-2} + \theta_1 \varepsilon_{t-1} + \theta_2 \varepsilon_{t-2} + \varepsilon_t
+$$
+
+where:
+
+- \( \phi_1, \phi_2 \) are AR coefficients,
+- \( \theta_1, \theta_2 \) are MA coefficients,
+- \( \varepsilon_t \sim \mathcal{N}(0, \sigma^2) \) is white noise.
+
+From each fitted ARIMA model, we extract:
+
+- AR coefficients (\( \phi_1, \phi_2 \)),
+- MA coefficients (\( \theta_1, \theta_2 \)),
+- Residual mean and standard deviation,
+- Estimated variance \( \sigma^2 \).
+
+We augment these ARIMA-based features with additional statistics such as:
+
+- Mean and standard deviation of pre-\( T_0 \) cumulative runs,
+- Initial and final cumulative runs up to \( T_0 \),
+- Number of wickets lost at \( T_0 \).
+
+### Forecasting Final Scores
+
+Let \( \mathbf{x}_i \in \mathbb{R}^d \) denote the extracted feature vector for the \( i \)-th inning. We define the **target** as the number of runs scored between balls \( T_0 + 1 \) and 120. We then train a Random Forest regression model \( \hat{f}(\mathbf{x}) \) using these global features across many innings:
+
+$$
+\text{RemainingRuns}_i = \hat{f}(\mathbf{x}_i)
+$$
+
+The predicted final score for inning \( i \) is then:
+
+$$
+\widehat{\text{FinalScore}}_i = \mathcal{X}_{i, T_0, 0} + \hat{f}(\mathbf{x}_i)
+$$
+
+### Performance
+
+We trained the global model on 500 innings and used a 20% test split. The model achieved:
+
+- **Mean Absolute Error (MAE)**: approximately 9–11 runs across held-out innings.
+- This performance reflects a strong ability to summarize an innings' momentum using the ARIMA signature and extrapolate the final total.
+
+We visualize actual vs. predicted cumulative run trajectories for sample innings:
+
+```{r fig1, echo=FALSE, out.width='90%', fig.cap="Predicted score for an inning using ARIMA.", fig.pos='H'}
+knitr::include_graphics("Images/ARIMAInningsForecastExample.png")
+```
+
+We can also look at the RMSE distributions when fitting the ARIMA model to a large number of innings, again using $T_0 = 60$ as our intervention point. The graphic shows that while the majority of predictions have a low RMSE and are quite accurate, there are a few outliers which greatly skew the mean error, showing that there are rare cases in which the model performs extremely poorly. 
+
+```{r fig2, echo=FALSE, out.width='90%', fig.cap="Distribution of RMSE for ARIMA model.", fig.pos='H'}
+knitr::include_graphics("Images/ARIMAErrorDistributions.png")
+```
 
 ## K-Nearest Neighbors Simulation
 
@@ -65,12 +259,26 @@ For this simulation, we implemented a weighted distance metric prioritizing wick
 The distance function is:
 
 $$
-D(i,j) = \sum_{t=1}^{T_0} (r_{it} - r_{jt})^2 + \lambda (w_{it} - w_{jt})^2
+D(i, j) = \sum_{t=1}^{T_0} \left( \mathcal{X}_{i, t, 1} - \mathcal{X}_{j, t, 1} \right)^2 + \lambda \left( \mathcal{X}_{i, t, 2} - \mathcal{X}_{j, t, 2} \right)^2
 $$
+
+
+We then ran repeated random simulations for a given inning and intervention point, and plotted the results, shown below. One major issue that appears in this algorithm is the computational burden. The reason for this is because for each simulated ball, we evaluate the distance metric between the treatment unit and all other \( N - 1 \) donor units and then sort them. The simulations themselves give quite satisfactory results, however it was not possible to do a full analysis on its accuracy due to its slow runtime. A plot for the results can be seen below (figure 1).
+
+The choice to use $\lambda=20$ is due to the fact that wickets are much rarer to see than runs. We can see run values of up to 200 in cricket games, but wickets can only go up to a value of 10.
+
+Further analysis can be done to find a better distance metric, and one option is to use the dynamic relationship between overs remaining and wickets lost in the DLS method to come up with a variable $lambda$ value. 
+
+
+```{r fig3, echo=FALSE, out.width='90%', fig.cap="KNN simulations for an inning.", fig.pos='H'}
+knitr::include_graphics("Images/SequentialModelSimulationExample.png")
+```
 
 ## Mactivation (Bayesian Activation Model)
 
-Using Professor Zes' `mactivate` library in R, we modeled the binary run activation probability per ball using splines and posterior inference. This allowed us to generate a posterior predictive distribution for scores after intervention by simulating from estimated activation curves.
+Using Professor Zes's `mactivate` library in R, we modeled the binary run activation probability per ball using splines and posterior inference. This allowed us to generate a posterior predictive distribution for scores after intervention by simulating from estimated activation curves.
+
+(explain more...redo this section after Professor Zes explains it more clearly)
 
 # Results
 
@@ -78,17 +286,36 @@ Using Professor Zes' `mactivate` library in R, we modeled the binary run activat
 - Linear regression predicting 15th over score from same predictors: \( R^2 = 0.80 \)
 - mRSC produced reasonable counterfactuals in majority of innings
 - ARIMA model performed well in smooth innings, but struggled with irregularity (high RMSE outliers)
+- KNN model produced decently accurate results with natural variability, however distance metric can be improved and computational efficiency can also be improved. 
 
 (Include plots of forecast vs actual, error distributions, etc.)
 
 # Conclusion
 
-(Write later)
+In this project, we explored a range of statistical and machine learning methods to forecast the final score of a T20 cricket innings using only partial game information available at a specified intervention point. Starting from simple linear regression models to more advanced approaches like ARIMA time series forecasting, robust synthetic control, and K-nearest-neighbor-based trajectory simulation, we evaluated the predictive performance and interpretability of each technique.
+
+Our experiments show that even relatively simple models using early-over scores can yield surprisingly strong baseline predictions. However, the use of full trajectory-based donor matching and sequential simulation opens up far more nuanced and dynamic forecasting potential. Each method brings unique strengths: linear regression offers interpretability, ARIMA captures autocorrelation, and donor-based simulations adapt flexibly to the current game state.
+
+Looking forward, there are several promising directions for extending this work. One avenue is to incorporate additional variables and features such as batter and bowler information, team compositions, venues, and recent team performances, as they can all be extracted from the underlying SQL database. These could significantly enhance predictive accuracy. Another direction is to integrate this forecasting engine into real-time tools for coaches, analysts, and broadcasters to aid in match strategy and commentary.
+
+A future direction to focus in would be to compare the predictive accuracy of these models with that of sportsbooks. If we are able to find that a certain model is able to forecast more accurately than the sports book lines at a rate that can yield us long run profits, we could use this tool to earn money for ourselves, or we can also monetize this tool by providing it to other individuals for a subscription price.  
+
+(add to conclusion if we have specific results we want to summarize about each of the models...perhaps pros and cons of each model...)
 
 # References
 
-- Misra, Vishal. "Multi-dimensional Robust Synthetic Control."
+(make the references properly formatted)
+
+- **DATA SOURCE**: cricsheet.org: Open-source ball-by-ball cricket data. URL https://cricsheet.org/
+
+- Amjad Muhammad, Vishal Misra, Devavrat Shah, Dennis Shen. mRSC: Multi-Dimensional Robust Synthetic Control 2019 URL: https://arxiv.org/pdf/1905.06400
+
+- Dave Zes. "mactivate" R package documentation. URL: https://cran.r-project.org/web/packages/mactivate/mactivate.pdf
+
+
+Additional Sources...
+
 - Kalman Filters and State Space Models.
 - Bayesian DLS methods using resource tables.
-- Cricsheet.org: Open-source ball-by-ball cricket data.
-- Zes, B. "mactivate" R package documentation.
+
+
