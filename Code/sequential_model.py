@@ -459,6 +459,190 @@ def plot_multiple_simulations_vs_truth(tensor, treatment_idx, intervention_ball,
 
 
 
+def compute_self_distance_matrix(tensor, intervention_ball, lambda_wicket=20):
+    """
+    Computes a hollow self-distance matrix (N x N) for all innings in the tensor up to the intervention_ball.
+
+    Parameters:
+    - tensor: numpy array of shape (N, T, K) where K=2 for [runs, wickets]
+    - intervention_ball: int, last ball to consider for distance computation
+    - lambda_wicket: float, weighting factor for wicket differences
+
+    Returns:
+    - dist_matrix: numpy array of shape (N, N) where dist_matrix[i, j] is the distance between innings i and j
+    """
+    N, T, K = tensor.shape
+    assert K >= 2, "Tensor must include at least two metrics: runs and wickets"
+    
+    dist_matrix = np.zeros((N, N))
+    
+    count = 0
+    
+    for i in range(N):
+        print(count)
+        count += 1
+        ts_i = tensor[i, :intervention_ball + 1, :]
+        for j in range(i + 1, N):  # Only compute upper triangle
+            ts_j = tensor[j, :intervention_ball + 1, :]
+            
+            if np.any(np.isnan(ts_i)) or np.any(np.isnan(ts_j)):
+                dist = np.nan
+            else:
+                run_diff_sq = (ts_i[:, 0] - ts_j[:, 0]) ** 2
+                wicket_diff_sq = (ts_i[:, 1] - ts_j[:, 1]) ** 2
+                dist = np.sum(run_diff_sq + lambda_wicket * wicket_diff_sq)
+
+            dist_matrix[i, j] = dist
+            dist_matrix[j, i] = dist  # Symmetric matrix
+    
+    # save matrix
+    np.save("distance_matrix.npy", dist_matrix)
+
+    return dist_matrix
+
+
+def simulate_from_fixed_neighbors(tensor, distance_matrix, treatment_idx, intervention_ball=60, k_neighbors=50, seed=None):
+    """
+    Simulate the rest of the inning for treatment_idx using fixed top-k nearest neighbors from a distance matrix.
+    
+    Parameters:
+    - tensor: numpy array of shape (N, T, 2) with cumulative [runs, wickets]
+    - distance_matrix: numpy array of shape (N, N)
+    - treatment_idx: integer index of the treatment inning
+    - intervention_ball: integer, the last observed ball
+    - k_neighbors: number of nearest donors to use
+    - seed: random seed for reproducibility
+    
+    Returns:
+    - counterfactual: np.array of shape (T - T0, 2), cumulative simulated [runs, wickets]
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    N, T, K = tensor.shape
+    assert K >= 2, "Tensor must include at least two metrics: runs and wickets"
+    assert intervention_ball + 1 < T, "Intervention must be before the end"
+
+    # Step 1: Find the k-nearest neighbors from the distance matrix
+    distances = distance_matrix[treatment_idx]
+    neighbor_indices = np.argsort(distances)
+    neighbor_indices = [i for i in neighbor_indices if i != treatment_idx]  # exclude self
+    top_k_neighbors = neighbor_indices[:k_neighbors]
+
+    # Step 2: Get starting state
+    current_runs = tensor[treatment_idx, intervention_ball, 0]
+    current_wickets = tensor[treatment_idx, intervention_ball, 1]
+    counterfactual = []
+
+    # Step 3: Simulate forward
+    for t in range(intervention_ball + 1, T):
+        if current_wickets >= 10:
+            break
+
+        deltas = []
+        for idx in top_k_neighbors:
+            if np.isnan(tensor[idx, t, 0]) or np.isnan(tensor[idx, t - 1, 0]):
+                continue
+            run_delta = tensor[idx, t, 0] - tensor[idx, t - 1, 0]
+            wicket_delta = tensor[idx, t, 1] - tensor[idx, t - 1, 1]
+            deltas.append([run_delta, wicket_delta])
+
+        if not deltas:
+            break
+
+        delta = deltas[np.random.choice(len(deltas))]
+        current_runs += delta[0]
+        current_wickets += delta[1]
+        counterfactual.append([current_runs, current_wickets])
+
+    return np.array(counterfactual)
+
+
+def plot_multiple_simulations_vs_truth_fixed(
+    tensor, distance_matrix, treatment_idx, intervention_ball,
+    simulate_func, num_sims=10, k_neighbors=50
+):
+    """
+    Plots the true trajectory vs. multiple simulated counterfactuals
+    using fixed neighbors from a precomputed distance matrix.
+
+    Parameters:
+    - tensor: np.array of shape (N, T, K)
+    - distance_matrix: np.array of shape (N, N)
+    - treatment_idx: index of the inning
+    - intervention_ball: integer (T₀)
+    - simulate_func: function(tensor, distance_matrix, treatment_idx, intervention_ball, k_neighbors, seed)
+    - num_sims: number of simulations to run
+    - k_neighbors: number of nearest neighbors to use
+    """
+
+    true_trajectory = tensor[treatment_idx, :, :]
+    T = true_trajectory.shape[0]
+    balls = np.arange(T)
+
+    # Initialize the figure
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+    # Plot true trajectory
+    axes[0].plot(balls, true_trajectory[:, 0], color="black", linewidth=2, label="True Runs")
+    axes[1].plot(balls, true_trajectory[:, 1], color="black", linewidth=2, label="True Wickets")
+    
+    runs = true_trajectory[:, 0]
+    valid_runs = runs[~np.isnan(runs)]
+    true_final_runs = valid_runs[-1]
+
+    # initialize last runs vector:
+    last_runs_vec = []
+    
+    for sim_num in range(num_sims):
+        cf_traj = simulate_func(
+            tensor, distance_matrix, treatment_idx,
+            intervention_ball, k_neighbors=k_neighbors, seed=None
+        )
+        
+        if len(cf_traj) > 0:
+            last_runs = cf_traj[-1, 0]
+            last_runs_vec.append(last_runs)
+        
+        sim_traj = np.full_like(true_trajectory, np.nan)
+        sim_traj[:intervention_ball + 1] = true_trajectory[:intervention_ball + 1]
+        sim_len = min(len(cf_traj), T - (intervention_ball + 1))
+        sim_traj[intervention_ball + 1:intervention_ball + 1 + sim_len] = cf_traj[:sim_len]
+
+        # Plot simulated lines
+        axes[0].plot(balls, sim_traj[:, 0], linestyle="--", alpha=0.5, label=f"Sim {sim_num + 1}" if sim_num < 1 else None)
+        axes[1].plot(balls, sim_traj[:, 1], linestyle="--", alpha=0.5)
+
+    # predicted final runs:
+    predicted_final_score = np.mean(last_runs_vec)
+    
+    # print:
+    print("True final score is: ", true_final_runs)
+    print("Predicted final score is: ", predicted_final_score)
+    print("Diff between predicted and true scores: ", predicted_final_score - true_final_runs)
+    
+    # Styling
+    axes[0].axvline(intervention_ball, color="blue", linestyle=":", label="Intervention")
+    axes[1].axvline(intervention_ball, color="blue", linestyle=":")
+
+    axes[0].set_ylabel("Cumulative Runs")
+    axes[1].set_ylabel("Cumulative Wickets")
+    axes[1].set_xlabel("Ball Number")
+
+    axes[0].legend()
+    axes[1].legend(["True Wickets"], loc="upper left")
+    axes[0].grid(True, linestyle='--', alpha=0.6)
+    axes[1].grid(True, linestyle='--', alpha=0.6)
+
+    plt.suptitle(f"True vs {num_sims} Simulated Trajectories (Unit {treatment_idx})", fontsize=14)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.show()
+
+
+
+
+
+
 
 
 
@@ -502,13 +686,30 @@ def main():
     feature_balls = [24, 36, 48, 60]  # balls after 4, 6, 8, and 10 overs
     target_ball = 90                  # predict score after 15 overs
 
-    unit = 2371
+    unit = 3976
     intervention = 60
     arima_order = (2, 1, 2)
     lambda_wicket = 20
-    knn = 50
-    num_sims=3
+    knn = 150
+    num_sims=50
     
+    '''
+    dist_matrix = compute_self_distance_matrix(tensor, intervention_ball=60, lambda_wicket=lambda_wicket)
+    print(dist_matrix)
+    '''
+    dist_matrix = np.load("distance_matrix.npy")
+    
+    '''
+    cf_traj = simulate_from_fixed_neighbors(
+        tensor=tensor,
+        distance_matrix=dist_matrix,
+        treatment_idx=unit,
+        intervention_ball=intervention,
+        k_neighbors=knn,
+        seed=None
+    )
+    print(cf_traj)
+    '''
     
     # sample_deltas = get_knn_next_ball_deltas(tensor, 1, intervention, knn, lambda_wicket)
     # print(sample_deltas)
@@ -519,15 +720,18 @@ def main():
     
     # plot_simulation_vs_truth(tensor, unit, intervention, cf_traj)
     
-    plot_multiple_simulations_vs_truth(
-        tensor,
+    
+    plot_multiple_simulations_vs_truth_fixed(
+        tensor=tensor,
+        distance_matrix=dist_matrix,
         treatment_idx=unit,
         intervention_ball=intervention,
-        simulate_func=simulate_counterfactual_inning,
+        simulate_func=simulate_from_fixed_neighbors,
         num_sims=num_sims,
-        k_neighbors=knn,
-        lambda_wicket=lambda_wicket
+        k_neighbors=knn
     )
+    
+    
     
     '''
     # run linear regression model to get baseline value of R-squared:

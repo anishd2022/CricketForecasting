@@ -598,7 +598,7 @@ def main():
     
     # set intervention ball and target unit:
     intervention_ball_number = 60
-    treatment_unit = 3476
+    treatment_unit = 3976
     # how much weight you want to give to [runs, wickets]
     weights_vector = np.array([1, 1])
     # weights_vector_2 = np.array([1, 1])
@@ -665,7 +665,7 @@ def main():
     
     # compute post intervention MSE for a given unit / intervention ball:
     mse = compute_post_intervention_mse(counterfactual, tensor, treatment_unit, intervention_ball_number)
-    # print(mse)
+    print(mse)
     
     
     '''

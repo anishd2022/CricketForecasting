@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Abstract
 
-Accurate real-time forecasting of final scores in T20 cricket can provide critical insights for team strategy, broadcasters, and bettors. In this project, we explore multiple modeling approaches to predict the final score of an inning given its partial progression. Using a curated dataset of over 22,000 T20 innings from Cricsheet, we construct a tensor representation of ball-by-ball cumulative runs and wickets. We evaluate the performance of several forecasting methods, including linear regression, ARIMA time series models, multi-dimensional robust synthetic control (mRSC), K-nearest neighbor (KNN) trajectory simulation, and Bayesian activation modeling via the `mactivate` package in R. We find that while linear regression offers strong early benchmarks, more sophisticated donor-based and Bayesian methods provide greater flexibility and robustness, especially post-intervention. Our results highlight the importance of incorporating historical game patterns and structural dynamics in modeling cricket scores over time.
+Accurate real-time forecasting of final scores in T20 cricket can provide critical insights for team strategy, broadcasters, and bettors. In this project, we explore multiple modeling approaches to predict the final score of an inning given its partial progression. Using a curated dataset of over 22,000 T20 innings from Cricsheet, we construct a tensor representation of ball-by-ball cumulative runs and wickets. We evaluate the performance of several forecasting methods, including linear regression, ARIMA time series models, multi-dimensional robust synthetic control (mRSC), K-nearest neighbor (KNN) trajectory simulation, and multiple activation modeling via the `mactivate` package in R. We find that while linear regression offers strong early benchmarks, more sophisticated donor-based methods provide greater flexibility and robustness, especially post-intervention. Our results highlight the importance of incorporating historical game patterns and structural dynamics in modeling cricket scores over time. We find that the mRSC and the mactivation algorithms provide the most accurate and consistent results. We end by discussing future directions and use cases of these forecasting algorithms.  
 
 # Introduction
 
@@ -176,7 +176,7 @@ To handle missing values (e.g., due to early innings termination), we apply **ma
 
 This approach allows for a nonparametric, interpretable reconstruction of scoring dynamics, grounded in empirical similarities across games.
 
-Here are some results we got when forecasting on a specific inning, using $T_0 = 60$ as the intervention point. The structure of this algorithm allows us to forecast not only runs, but also wickets as the game progresses past the intervention point. 
+Here are some results we got when forecasting on a specific inning, using $T_0 = 60$ as the intervention point. The structure of this algorithm allows us to forecast not only runs, but also wickets as the game progresses past the intervention point. Notice how the future trajectory efficiently captures the flow of the game, as the curve becomes slightly steeper towards the end of the innings, suggesting high scoring rates in the death overs as typically seen in a T20 game especially when there are enough wickets in hand. 
 
 ```{r, echo=FALSE, out.width='100%', fig.cap="mRSC Runs Forecast on a specific inning.", fig.pos='H'}
 knitr::include_graphics("Images/mRSCRunsForecast.png")
@@ -246,13 +246,15 @@ We visualize actual vs. predicted cumulative run trajectories for sample innings
 knitr::include_graphics("Images/ARIMAInningsForecastExample.png")
 ```
 
-We can also look at the RMSE distributions when fitting the ARIMA model to a large number of innings, again using $T_0 = 60$ as our intervention point. The graphic shows that while the majority of predictions have a low RMSE and are quite accurate, there are a few outliers which greatly skew the mean error, showing that there are rare cases in which the model performs extremely poorly. 
+We can also look at the RMSE distributions when fitting the ARIMA model to a large number of innings, again using $T_0 = 60$ as our intervention point. The graphic shows that while the majority of predictions have a low RMSE and are quite accurate, there are a few outliers which greatly skew the mean error, showing that there are rare cases in which the model performs extremely poorly.  
 
 ```{r fig2, echo=FALSE, out.width='90%', fig.cap="Distribution of RMSE for ARIMA model.", fig.pos='H'}
 knitr::include_graphics("Images/ARIMAErrorDistributions.png")
 ```
 
 ## K-Nearest Neighbors Simulation
+
+### Brute Force Approach
 
 For this simulation, we implemented a weighted distance metric prioritizing wickets (\( \lambda = 20 \)) to match treatment innings with similar donor units. At each ball after \( T_0 \), we identify the top 50 nearest neighbors, sample their next-ball delta, and simulate forward until the 120th ball or the 10th wicket.
 
@@ -263,32 +265,78 @@ D(i, j) = \sum_{t=1}^{T_0} \left( \mathcal{X}_{i, t, 1} - \mathcal{X}_{j, t, 1} 
 $$
 
 
-We then ran repeated random simulations for a given inning and intervention point, and plotted the results, shown below. One major issue that appears in this algorithm is the computational burden. The reason for this is because for each simulated ball, we evaluate the distance metric between the treatment unit and all other \( N - 1 \) donor units and then sort them. The simulations themselves give quite satisfactory results, however it was not possible to do a full analysis on its accuracy due to its slow runtime. A plot for the results can be seen below (figure 1).
+We then ran repeated random simulations for a given inning and intervention point, and plotted the results, shown below with $T_0 = 60$ and $K = 50$. One major issue that appears in this algorithm is the computational burden. The reason for this is because for each simulated ball, we evaluate the distance metric between the treatment unit and all other \( N - 1 \) donor units and then sort them. The simulations themselves give quite satisfactory results, however it was not possible to do a full analysis on its accuracy due to its slow runtime. A plot for the results can be seen below.
 
 The choice to use $\lambda=20$ is due to the fact that wickets are much rarer to see than runs. We can see run values of up to 200 in cricket games, but wickets can only go up to a value of 10.
 
-Further analysis can be done to find a better distance metric, and one option is to use the dynamic relationship between overs remaining and wickets lost in the DLS method to come up with a variable $lambda$ value. 
+Further analysis can be done to find a better distance metric, and one option is to use the dynamic relationship between overs remaining and wickets lost in the DLS method to come up with a variable $\lambda$ value. 
 
 
 ```{r fig3, echo=FALSE, out.width='90%', fig.cap="KNN simulations for an inning.", fig.pos='H'}
 knitr::include_graphics("Images/SequentialModelSimulationExample.png")
 ```
 
-## Mactivation (Bayesian Activation Model)
+### Hollow Distance Matrix Approach
 
-Using Professor Zes's `mactivate` library in R, we modeled the binary run activation probability per ball using splines and posterior inference. This allowed us to generate a posterior predictive distribution for scores after intervention by simulating from estimated activation curves.
+To address the computational inefficiency of recalculating distances after each simulated ball, we implemented an optimized version of the KNN algorithm that precomputes and stores a **hollow self-distance matrix**. This matrix has dimensions \( N \times N \), where \( N \) is the number of innings in the dataset. The \((i, j)\)th entry stores the weighted Euclidean distance between the \(i\)th and \(j\)th innings up to the intervention point \( T_0 \), using the same metric $D(i, j)$:
 
-(explain more...redo this section after Professor Zes explains it more clearly)
+Because we are comparing each inning with itself, the diagonal entries of this matrix are all zero, hence the term *hollow*. Once computed, this distance matrix allows us to quickly identify the top \( K \) nearest neighbors for any treatment inning without re-evaluating distances at every step. These neighbors are then locked in for the rest of the simulation, and at each subsequent ball after \( T_0 \), we randomly sample a next-ball delta (runs and wickets) from the corresponding position in one of the nearest neighbors.
+
+This "precomputed neighbors" approach significantly reduces runtime and computational overhead, especially when simulating many innings or running repeated forecasts. While this comes at the cost of adaptability, as we no longer update the donor pool dynamically after each simulated ball, the tradeoff is reasonable when speed and scalability are a priority.
+
+With this simplified approach, we have the ability to run many more simulations for a given treatment unit. Running more simulations and then averaging the end score after 20 overs for all simulations will give us a much better estimate of what the final score should be. One downside of this approach is that this self-distance matrix only applies for a given intervention ball $T_0 = 60$. If we want to forecast for $T_0 \neq 60$, we would have to create a new matrix for that new $T_0$. 
+
+The image below shows an example on a given inning, where we apply the precomputed distance matrix method to run 50 simulations of the counterfactual with $K = 50$. We record the final cumulative runs of each simulation and average them to get a final estimate of runs at the end of the innings and compare it with the true result. For this specific inning, we get a final prediction of 174.78 runs, compared to a true final score of 173, making the residual only 1.78 runs. 
+
+```{r, echo=FALSE, out.width='90%', fig.cap="KNN simulation using distance matrix.", fig.pos='H'}
+knitr::include_graphics("Images/DistanceMatrixKNNSimulation.png")
+```
+
+## Mactivation (Multiple Activation)
+
+(continue to improve this section as I understand more)
+
+Using Professor Zes's `mactivate` library in R, we predict final scores after 20 overs in an inning from an intervention point sometime earlier in the inning. 
+
+To complement our other forecasting methods, we implemented a multiple activation-based regression model using the `mactivate` R package developed by Professor Zes. This model is designed to capture complex relationships in the data through multiple activation layers. We predict final scores after 20 overs in an inning from an intervention point sometime earlier in the inning. 
+
+### Data Preparation
+
+We constructed a feature matrix using cumulative runs and wickets at several key points in the innings (e.g., 36, 48, 66, 78, and 90 balls), along with binary indicators such as whether more than two or four wickets remained at the 90-ball mark. The target variable was the final score at ball 120. All features were standardized using the mean and standard deviation of the training set.
+
+We split the full dataset of over 22,000 T20 innings into training and test sets, using the final 4,000 most recently played innings as the held-out evaluation group. The standardized input matrix \( X \) and activation covariates \( U \) were used to fit the model, with the following structure:
+
+- \( X \): Main covariates (interactions, nonlinear terms)
+- \( U \): Subset of covariates used in activation layers
+
+### Model Specification and Training
+
+We trained the hybrid activation model using the `f_fit_hybrid_01()` function, with key control parameters passed via `f_control_mactivate()`:
+
+- `param_sensitivity = 10^{11}`: sensitivity rate
+- `escape_rate = 1.0001`: Encourages movement across loss landscape
+- `force_tries = 500–1000`: Enforces additional local exploration
+- `m_tot = 14`: Number of activation features used
+- `lambda`: Ridge regularization penalty
+
+The model was trained for multiple configurations of input structure, tuning the predictor set and activation matrix. Optimization was done with high precision (`tol = 1e-24`). A downside for this algorithm was its slow runtime as it looked to optimize step by step in a high dimensional space. It took a couple of hours to run.  
+
+### Performance Evaluation
+
+For each model, we computed predictions for the test set across 14 activation gates $mtotal = 14$, and recorded the RMSE at each depth. The best configuration achieved a test-set \( R^2 \) of approximately 0.953, outperforming models such as random forests. 
+
+This approach balances flexibility and interpretability, offering an appealing framework for future extensions where wickets and runs interact in complex ways. Unlike tree-based methods, the activation model provides smoother, more controlled generalization and clearer interpretability across activation depth.
 
 # Results
 
 - Linear regression predicting 12th over score from overs 2, 4, 6, 8, 10: \( R^2 = 0.93 \)
 - Linear regression predicting 15th over score from same predictors: \( R^2 = 0.80 \)
-- mRSC produced reasonable counterfactuals in majority of innings
-- ARIMA model performed well in smooth innings, but struggled with irregularity (high RMSE outliers)
-- KNN model produced decently accurate results with natural variability, however distance metric can be improved and computational efficiency can also be improved. 
+- mRSC produced reasonable counterfactuals in majority of innings, and was often able to capture the subtle changes in game flow and the dynamic relationship between runs and wickets. The RMSE across innings when using an intervention point at 10 overs and predicting up until over 20 was about 8.21 runs. This was better than the RMSE seen from the ARIMA model.  
+- ARIMA model performed well in smooth innings, but struggled with irregularity (high RMSE outliers). With a mean RMSE across innings of about 12.78 runs, the model can be trusted for most innings. However, the relative simplicity of the model when compared to mRSC results in the ARIMA model sometimes not being able to capture all information from the pre-intervention data.  
+- KNN model produced decently accurate results with natural variability, however the distance metric can be improved and computational efficiency can also be improved. Due to the slow running of this algorithm, it was not possible to compute an overall metric for its accuracy, though we did manage to make the algorithm more efficient through a hollow self-distance matrix.  
+- The mactivate model achieved an $R^2$ of 0.8754 when predicting the final score at 20 overs from an intervention point of 10 overs, and achieved an $R^2$ of 0.9523 when predicting over 20 score from over 15. 
 
-(Include plots of forecast vs actual, error distributions, etc.)
+**Overall, the mRSC and mactivate models show the highest promise, yielding very accurate results. The KNN algorithm using pre-computed matrices for intervention points is also a relatively accurate approach.** 
 
 # Conclusion
 
@@ -304,18 +352,13 @@ A future direction to focus in would be to compare the predictive accuracy of th
 
 # References
 
-(make the references properly formatted)
+[1] **Cricsheet**. "Open-source ball-by-ball cricket data." Available: [https://cricsheet.org](https://cricsheet.org)
 
-- **DATA SOURCE**: cricsheet.org: Open-source ball-by-ball cricket data. URL https://cricsheet.org/
+[2] M. Amjad, V. Misra, D. Shah, and D. Shen, "mRSC: Multi-Dimensional Robust Synthetic Control," *arXiv preprint arXiv:1905.06400*, 2019. Available: [https://arxiv.org/pdf/1905.06400](https://arxiv.org/pdf/1905.06400)
 
-- Amjad Muhammad, Vishal Misra, Devavrat Shah, Dennis Shen. mRSC: Multi-Dimensional Robust Synthetic Control 2019 URL: https://arxiv.org/pdf/1905.06400
+[3] D. Zes, *mactivate: A Package for Activation-Based Regression Models*, 2022. Available: [https://cran.r-project.org/web/packages/mactivate/mactivate.pdf](https://cran.r-project.org/web/packages/mactivate/mactivate.pdf)
 
-- Dave Zes. "mactivate" R package documentation. URL: https://cran.r-project.org/web/packages/mactivate/mactivate.pdf
+[4] I. Bhattacharya, R. Ghosal, S. Ghosh, "A Statistical Exploration of Duckworth-Lewis Method Using Bayesian Inference", 2018. Available: [https://arxiv.org/abs/1810.00908v1](https://arxiv.org/abs/1810.00908v1)
 
-
-Additional Sources...
-
-- Kalman Filters and State Space Models.
-- Bayesian DLS methods using resource tables.
 
 
