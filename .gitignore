@@ -7,3 +7,5 @@ Sample_NBA_Data/
 .env
 Images/
 .Rproj.user
+.RData
+.Rhistory
