@@ -23,7 +23,7 @@ Accurate real-time forecasting of final scores in T20 cricket can provide critic
 
 T20 cricket, the shortest international format of the game, has seen an explosion in popularity over the last two decades, thanks to its fast pace, strategic complexity, and entertainment value. Unlike Test or One-Day matches, T20 games are limited to a single inning per team, with each inning restricted to 20 overs (i.e., 120 legal deliveries). The match begins with a coin toss, where the winning team elects to bat or bowl first. Team A bats first, aiming to score as many runs as possible before either losing all 10 wickets or completing 20 overs. Team B then attempts to chase this target, and the match concludes when the target is surpassed, the full quota of overs is bowled, or all 10 wickets fall.
 
-What makes T20 cricket particularly dynamic is the high scoring rate and rapid momentum shifts. Because of the limited duration, batters tend to play aggressively, aiming for boundaries rather than survival. However, this risk-heavy approach is tempered by wicket loss: teams that lose early wickets often shift to a more conservative style of play to preserve their remaining batters. This interplay between aggression and caution — modulated by overs remaining, runs scored, and wickets lost — gives rise to rich scoring patterns that evolve ball by ball.
+What makes T20 cricket particularly dynamic is the high scoring rate and rapid momentum shifts. Because of the limited duration, batters tend to play aggressively, aiming for boundaries rather than survival. However, this risk-heavy approach is tempered by wicket loss: teams that lose early wickets often shift to a more conservative style of play to preserve their remaining batters. This interplay between aggression and caution, modulated by overs remaining, runs scored, and wickets lost, gives rise to rich scoring patterns that evolve ball by ball.
 
 Accurately modeling and forecasting the evolution of an inning, especially after a partial trajectory is observed (e.g., after 8 overs), can be extremely valuable for decision-makers. Coaches may use such models to assess expected scores and adjust strategy; broadcasters and commentators can enhance viewer engagement; and sportsbooks or bettors can price game outcomes more accurately.
 
@@ -31,7 +31,7 @@ In this project, we aim to forecast the final score of an inning given partial i
 
 # Problem Statement
 
-In this project, we aim to model and forecast the progression of a T20 cricket inning using partially observed data. Each inning is represented by a time series of cumulative metrics — specifically, total runs scored and total wickets lost — recorded ball by ball. Collectively, our dataset spans $N$ innings, each with up to $T = 120$ balls, and $K = 2$ key metrics. We organize this information into a 3-dimensional tensor $\mathcal{X} \in \mathbb{R}^{N \times T \times K}$, where $\mathcal{X}_{i, t, k}$ captures the cumulative value of metric $k$ for inning $i$ at ball $t$.
+In this project, we aim to model and forecast the progression of a T20 cricket inning using partially observed data. Each inning is represented by a time series of cumulative metrics, specifically total runs scored and total wickets lost, recorded ball by ball. Collectively, our dataset spans $N$ innings, each with up to $T = 120$ balls, and $K = 2$ key metrics. We organize this information into a 3-dimensional tensor $\mathcal{X} \in \mathbb{R}^{N \times T \times K}$, where $\mathcal{X}_{i, t, k}$ captures the cumulative value of metric $k$ for inning $i$ at ball $t$.
 
 Let $T_0$ denote a designated intervention point within an inning. We define the trajectory from ball $0$ to $T_0$ as the **pre-intervention** segment, and from $T_0 + 1$ to $T$ as the **post-intervention** segment. Our objective is to accurately forecast the post-intervention trajectory of a given inning $i^*$ — referred to as the **treatment unit** — using its own pre-intervention history along with the complete trajectories of the remaining $N - 1$ innings, which serve as **donor units**.
 
@@ -53,7 +53,7 @@ For the purposes of modeling, we focused specifically on T20-format matches and 
 - The second dimension spans the 120 legal deliveries (balls) of a full 20-over inning.
 - The third dimension holds two cumulative metrics: total runs scored and total wickets lost.
 
-This tensor was saved as a `.npz` file — a compressed NumPy archive format — to allow for efficient loading and access during model training and evaluation. This setup ensures high computational efficiency while retaining all the temporal resolution of the original ball-by-ball data.
+This tensor was saved as a `.npz` file, a compressed NumPy archive format, to allow for efficient loading and access during model training and evaluation. This setup ensures high computational efficiency while retaining all the temporal resolution of the original ball-by-ball data.
 
 The tensor can be somewhat visualized using this graphic:
 
@@ -294,8 +294,6 @@ knitr::include_graphics("Images/DistanceMatrixKNNSimulation.png")
 
 ## Mactivation (Multiple Activation)
 
-(continue to improve this section as I understand more)
-
 Using Professor Zes's `mactivate` library in R, we predict final scores after 20 overs in an inning from an intervention point sometime earlier in the inning. 
 
 To complement our other forecasting methods, we implemented a multiple activation-based regression model using the `mactivate` R package developed by Professor Zes. This model is designed to capture complex relationships in the data through multiple activation layers. We predict final scores after 20 overs in an inning from an intervention point sometime earlier in the inning. 
@@ -323,7 +321,7 @@ The model was trained for multiple configurations of input structure, tuning the
 
 ### Performance Evaluation
 
-For each model, we computed predictions for the test set across 14 activation gates $mtotal = 14$, and recorded the RMSE at each depth. The best configuration achieved a test-set \( R^2 \) of approximately 0.953, outperforming models such as random forests. 
+For each model, we computed predictions for the test set across 14 activation gates $mtotal = 14$, and recorded the RMSE at each depth. The best configuration achieved a test-set \( R^2 \) of approximately 0.9232, outperforming models such as random forests. 
 
 This approach balances flexibility and interpretability, offering an appealing framework for future extensions where wickets and runs interact in complex ways. Unlike tree-based methods, the activation model provides smoother, more controlled generalization and clearer interpretability across activation depth.
 
@@ -334,7 +332,7 @@ This approach balances flexibility and interpretability, offering an appealing f
 - mRSC produced reasonable counterfactuals in majority of innings, and was often able to capture the subtle changes in game flow and the dynamic relationship between runs and wickets. The RMSE across innings when using an intervention point at 10 overs and predicting up until over 20 was about 8.21 runs. This was better than the RMSE seen from the ARIMA model.  
 - ARIMA model performed well in smooth innings, but struggled with irregularity (high RMSE outliers). With a mean RMSE across innings of about 12.78 runs, the model can be trusted for most innings. However, the relative simplicity of the model when compared to mRSC results in the ARIMA model sometimes not being able to capture all information from the pre-intervention data.  
 - KNN model produced decently accurate results with natural variability, however the distance metric can be improved and computational efficiency can also be improved. Due to the slow running of this algorithm, it was not possible to compute an overall metric for its accuracy, though we did manage to make the algorithm more efficient through a hollow self-distance matrix.  
-- The mactivate model achieved an $R^2$ of 0.8754 when predicting the final score at 20 overs from an intervention point of 10 overs, and achieved an $R^2$ of 0.9523 when predicting over 20 score from over 15. 
+- The mactivate model achieved an $R^2$ of 0.8754 when predicting the final score at 20 overs from an intervention point of 10 overs, and achieved an $R^2$ of 0.9232 when predicting over 20 score from over 15. 
 
 **Overall, the mRSC and mactivate models show the highest promise, yielding very accurate results. The KNN algorithm using pre-computed matrices for intervention points is also a relatively accurate approach.** 
 
@@ -347,8 +345,6 @@ Our experiments show that even relatively simple models using early-over scores 
 Looking forward, there are several promising directions for extending this work. One avenue is to incorporate additional variables and features such as batter and bowler information, team compositions, venues, and recent team performances, as they can all be extracted from the underlying SQL database. These could significantly enhance predictive accuracy. Another direction is to integrate this forecasting engine into real-time tools for coaches, analysts, and broadcasters to aid in match strategy and commentary.
 
 A future direction to focus in would be to compare the predictive accuracy of these models with that of sportsbooks. If we are able to find that a certain model is able to forecast more accurately than the sports book lines at a rate that can yield us long run profits, we could use this tool to earn money for ourselves, or we can also monetize this tool by providing it to other individuals for a subscription price.  
-
-(add to conclusion if we have specific results we want to summarize about each of the models...perhaps pros and cons of each model...)
 
 # References
 
