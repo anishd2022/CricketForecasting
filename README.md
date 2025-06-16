@@ -1,5 +1,4 @@
-# Cricket Forecasting
+# Forecasting Scores in T20 Cricket Games
 
-- My research project will aims to forecast results of cricket games in terms of runs, wickets, and margins of victory. My work will be supervised by Professor Zes. I plan to communicate with him on a regular basis over the course of my research project, either over zoom or in person. My approach will start off by collecting lots of ball by ball data from thousands of past cricket games from CricInfo. From there, I plan to work with the time series data by using algorithms that attempt to distinguish signal from noise in order to build
-successful models to accurately forecast cricket games.
-- My final deliverable will be a formal research paper detailing my research and results.
+-   Working with Professor Dave Zes at UCLA, I took on a STATS 199 undergraduate research project that aimed to forecast the final score in a T20 inning after an arbitrary intervention point sometime earlier in the inning. I explored various methods, such as linear regression, ARIMA models, KNN simulations, multi-dimensional robust synthetic control (mRSC), and the R [mactivate](https://cran.r-project.org/web/packages/mactivate/mactivate.pdf) library developed by Prof. Zes. I analyzed the accuracy and the pros and cons of each method used.
+- My final deliverable is a formal research paper detailing my research and results.
