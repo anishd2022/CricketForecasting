@@ -16,3 +16,5 @@
   - SQL queries to generate structured datasets suitable for modeling and time-series analysis.
 
 - **Scope**: ~18,500 matches processed, focusing on first-innings forecasting tasks.
+
+- **Data**: The final data structure used for the rest of my analysis is the `t20_tensor_data.npz` and `t20_tensor_data_with_inning.npz`. The exact details of this data structure can be found in my paper. 
